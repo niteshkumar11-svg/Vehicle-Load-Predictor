@@ -135,7 +135,13 @@ def _gspread_client():
     if not GSPREAD_OK:
         st.error("Install gspread + google-auth: `pip install gspread google-auth`")
         st.stop()
-    key_dict = dict(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
+    # Support both key names used across deployments
+    secret_key = (
+        "gcp_service_account"
+        if "gcp_service_account" in st.secrets
+        else "GOOGLE_SERVICE_ACCOUNT"
+    )
+    key_dict = dict(st.secrets[secret_key])
     creds = Credentials.from_service_account_info(key_dict, scopes=GSHEETS_SCOPES)
     return gspread.authorize(creds)
 
