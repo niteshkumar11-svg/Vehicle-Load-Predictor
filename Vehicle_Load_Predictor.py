@@ -1,10 +1,8 @@
 """
-Vehicle Load Prediction Dashboard
-Flipkart — Hajipur Mother Hub
-
-Reads floor load data (Bag, Semi-Large, Tote, Secondary Pending) from Google Sheets,
-aggregates by DH and cutoff, then predicts the optimal dispatch vehicle using a
-RandomForest model trained on synthetic data generated from the business capacity rules.
+Vehicle Load Prediction Dashboard  —  Flipkart · Hajipur Mother Hub
+• Multi-select cutoff + DH tables
+• Smart vehicle recommendation targeting ~90 % utilisation
+• Manual vehicle selector with remaining-capacity breakdown
 """
 
 import re
@@ -25,30 +23,20 @@ try:
 except ImportError:
     GSPREAD_OK = False
 
-try:
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.preprocessing import LabelEncoder
-    SKLEARN_OK = True
-except ImportError:
-    SKLEARN_OK = False
-
 # ── Constants ──────────────────────────────────────────────────────────────────
-
 SPREADSHEET_ID = "1SbLc5pt0YPDBEQVOaOfyd-AJfvhTthQ5zUAcGgFU7Tc"
-
 GSHEETS_SCOPES = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
 ]
 
-# Business capacity rules per 32 Ft truck
-BAG_SHIPMENTS_PER_32FT = 17_000   # max shipments (in bags) per 32ft truck
-SEMI_PER_32FT          = 1_800    # max semi-large units per 32ft truck
-TOTES_PER_32FT         = 650      # max totes per 32ft truck
-SECONDARY_PER_32FT     = 14_235   # max regular shipments per 32ft truck
-SHIPMENTS_PER_BAG      = 30       # average shipments per bag
+# Capacity per 32 Ft truck (business rules)
+BAG_SHIPMENTS_32FT = 17_000   # total shipments (in bags) per 32 Ft
+SEMI_32FT          = 1_800    # semi-large units per 32 Ft
+TOTES_32FT         = 650      # totes per 32 Ft
+SECONDARY_32FT     = 14_235   # regular / secondary shipments per 32 Ft
+SHIPMENTS_PER_BAG  = 30
 
-# Fallback vehicle capacity table (overridden by Load Capacity sheet if present)
 DEFAULT_VEHICLE_CAPS = [
     ("6.5 Ft",  800),
     ("8 Ft",   1_384),
@@ -61,8 +49,9 @@ DEFAULT_VEHICLE_CAPS = [
     ("32 Ft", 14_235),
 ]
 
-# ── Page config ────────────────────────────────────────────────────────────────
+TARGET_UTIL = 0.90   # target utilisation
 
+# ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="🚛 Vehicle Load Predictor | Hajipur MH",
     layout="wide",
@@ -70,726 +59,625 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS ────────────────────────────────────────────────────────────────────────
-
 st.markdown("""
 <style>
-    .stApp { background: #f8fafc; }
-    section[data-testid="stSidebar"] { background: #1e293b !important; }
-    section[data-testid="stSidebar"] * { color: #f1f5f9 !important; }
-    .metric-card {
-        background: white;
-        border-radius: 14px;
-        padding: 18px 20px;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        border-left: 4px solid var(--accent);
-        margin-bottom: 8px;
-    }
-    .metric-label { font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
-    .metric-value { font-size: 36px; font-weight: 800; color: var(--accent); line-height: 1.1; margin: 4px 0; }
-    .metric-sub   { font-size: 12px; color: #94a3b8; }
-    .predict-card {
-        background: linear-gradient(135deg, #1e3a5f, #2563eb);
-        border-radius: 16px;
-        padding: 26px 28px;
-        color: white;
-        box-shadow: 0 8px 28px rgba(37,99,235,.35);
-    }
-    .pred-label  { font-size: 13px; opacity: .8; font-weight: 500; }
-    .pred-vehicle{ font-size: 44px; font-weight: 900; margin: 8px 0 4px; letter-spacing: -1px; }
-    .pred-meta   { font-size: 13px; opacity: .75; margin-top: 10px; }
-    .alt-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 6px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .bar-track {
-        background: #f1f5f9;
-        border-radius: 999px;
-        height: 10px;
-        margin-top: 4px;
-        overflow: hidden;
-    }
-    .bar-fill { height: 10px; border-radius: 999px; }
-    .step-header {
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: #64748b;
-        margin-bottom: 4px;
-    }
-    div[data-testid="stSelectbox"] label { font-weight: 600 !important; }
+.stApp{background:#f0f2f6}
+section[data-testid="stSidebar"]{background:#1e293b!important}
+section[data-testid="stSidebar"] *{color:#f1f5f9!important}
+.kcard{background:white;border-radius:14px;padding:16px 20px;border:1px solid #e2e8f0;
+       box-shadow:0 2px 8px rgba(0,0,0,.05);border-left:4px solid var(--ac)}
+.klabel{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.6px}
+.kvalue{font-size:34px;font-weight:900;color:var(--ac);line-height:1.1;margin:2px 0}
+.ksub  {font-size:12px;color:#94a3b8;margin-top:2px}
+.predcard{background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:16px;
+          padding:24px 26px;color:white;box-shadow:0 8px 28px rgba(37,99,235,.35)}
+.sec-hdr{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
+         color:#64748b;margin:0 0 6px}
+.bartrack{background:#e2e8f0;border-radius:999px;height:11px;overflow:hidden;margin-top:3px}
+.barfill{height:11px;border-radius:999px}
+.vcap-row{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;
+          margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Auth / data loading ────────────────────────────────────────────────────────
-
-def _gspread_client():
+# ── Auth ───────────────────────────────────────────────────────────────────────
+def _gc():
     if not GSPREAD_OK:
-        st.error("Install gspread + google-auth: `pip install gspread google-auth`")
+        st.error("Install gspread + google-auth")
         st.stop()
-    # Support both key names used across deployments
-    secret_key = (
-        "gcp_service_account"
-        if "gcp_service_account" in st.secrets
-        else "GOOGLE_SERVICE_ACCOUNT"
-    )
-    key_dict = dict(st.secrets[secret_key])
-    creds = Credentials.from_service_account_info(key_dict, scopes=GSHEETS_SCOPES)
+    key = "gcp_service_account" if "gcp_service_account" in st.secrets else "GOOGLE_SERVICE_ACCOUNT"
+    creds = Credentials.from_service_account_info(dict(st.secrets[key]), scopes=GSHEETS_SCOPES)
     return gspread.authorize(creds)
 
-
 @st.cache_data(ttl=300, show_spinner=False)
-def load_all_sheets() -> dict:
-    gc = _gspread_client()
+def load_sheets():
+    gc = _gc()
     sh = gc.open_by_key(SPREADSHEET_ID)
     return {ws.title: ws.get_all_values() for ws in sh.worksheets()}
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _norm(s: str) -> str:
-    """Lowercase, strip underscores/spaces/hyphens for fuzzy matching."""
+def _norm(s):
     return re.sub(r"[_\s\-]+", "", str(s)).lower()
 
-
-def _fuzzy(a: str, b: str) -> float:
+def _fuzzy(a, b):
     return SequenceMatcher(None, _norm(a), _norm(b)).ratio()
 
-
-def _find_sheet(sheets: dict, *keywords):
-    """Return (name, values) for first sheet whose name contains any keyword."""
-    for kw in keywords:
+def _find(sheets, *kws):
+    for kw in kws:
         for name, vals in sheets.items():
             if kw.lower() in name.lower():
-                return name, vals
-    return None, []
+                return vals
+    return []
 
-
-def _to_df(values: list, header_row: int = 0) -> pd.DataFrame:
-    if len(values) <= header_row:
+def _df(vals, hdr=0):
+    if len(vals) <= hdr:
         return pd.DataFrame()
-    headers = [str(h).strip() for h in values[header_row]]
-    rows = values[header_row + 1:]
-    n = len(headers)
-    rows = [r[:n] + [""] * max(0, n - len(r)) for r in rows]
-    df = pd.DataFrame(rows, columns=headers)
+    heads = [str(h).strip() for h in vals[hdr]]
+    rows  = vals[hdr+1:]
+    n = len(heads)
+    rows = [r[:n] + [""] * max(0, n-len(r)) for r in rows]
+    df = pd.DataFrame(rows, columns=heads)
     df.replace("", np.nan, inplace=True)
     return df.dropna(how="all")
 
+def _destcol(df):
+    return next((c for c in df.columns if "dest" in c.lower()), None)
 
-def _dest_col(df: pd.DataFrame) -> str | None:
-    for c in df.columns:
-        if "dest" in c.lower():
-            return c
-    return None
-
-
-# ── Data parsing ───────────────────────────────────────────────────────────────
-
+# ── Parse ──────────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
-def parse_data(sheets_key: tuple):
-    # re-load from cache — sheets_key is just used as a cache key
-    sheets = load_all_sheets()
+def parse(_key):
+    sheets = load_sheets()
 
-    # ── Bag ──────────────────────────────────────────────────────────────────
-    _, bag_vals = _find_sheet(sheets, "bag")
+    # Bag
+    bag_v = _find(sheets, "bag")
     df_bag = pd.DataFrame()
-    if bag_vals:
-        df_bag = _to_df(bag_vals)
-        dest_c = _dest_col(df_bag)
-        # Tracking ID Count = shipments inside the bag
-        tid_c = next(
-            (c for c in df_bag.columns if "tracking" in c.lower() and "count" in c.lower()),
-            None,
-        )
-        if dest_c and tid_c:
-            df_bag = df_bag[[dest_c, tid_c]].rename(
-                columns={dest_c: "destination", tid_c: "shipment_count"}
-            )
+    if bag_v:
+        d = _df(bag_v)
+        dc = _destcol(d)
+        tc = next((c for c in d.columns if "tracking" in c.lower() and "count" in c.lower()), None)
+        if dc and tc:
+            df_bag = d[[dc, tc]].rename(columns={dc:"destination", tc:"ship_count"})
             df_bag["destination"] = df_bag["destination"].astype(str).str.strip()
-            df_bag["shipment_count"] = pd.to_numeric(
-                df_bag["shipment_count"], errors="coerce"
-            ).fillna(0).astype(int)
+            df_bag["ship_count"]  = pd.to_numeric(df_bag["ship_count"], errors="coerce").fillna(0).astype(int)
             df_bag = df_bag[df_bag["destination"].notna() & (df_bag["destination"] != "nan")]
-        else:
-            df_bag = pd.DataFrame()
 
-    # ── Semi-large ────────────────────────────────────────────────────────────
-    _, semi_vals = _find_sheet(sheets, "semi")
+    # Semi-large
+    semi_v = _find(sheets, "semi")
     df_semi = pd.DataFrame()
-    if semi_vals:
-        df_semi = _to_df(semi_vals)
-        dest_c = _dest_col(df_semi)
-        if dest_c:
-            df_semi = df_semi[[dest_c]].rename(columns={dest_c: "destination"})
+    if semi_v:
+        d = _df(semi_v); dc = _destcol(d)
+        if dc:
+            df_semi = d[[dc]].rename(columns={dc:"destination"})
             df_semi["destination"] = df_semi["destination"].astype(str).str.strip()
             df_semi = df_semi[df_semi["destination"].notna() & (df_semi["destination"] != "nan")]
 
-    # ── Tote ──────────────────────────────────────────────────────────────────
-    _, tote_vals = _find_sheet(sheets, "tote")
+    # Tote
+    tote_v = _find(sheets, "tote")
     df_tote = pd.DataFrame()
-    if tote_vals:
-        df_tote = _to_df(tote_vals)
-        dest_c = _dest_col(df_tote)
-        if dest_c:
-            df_tote = df_tote[[dest_c]].rename(columns={dest_c: "destination"})
+    if tote_v:
+        d = _df(tote_v); dc = _destcol(d)
+        if dc:
+            df_tote = d[[dc]].rename(columns={dc:"destination"})
             df_tote["destination"] = df_tote["destination"].astype(str).str.strip()
             df_tote = df_tote[df_tote["destination"].notna() & (df_tote["destination"] != "nan")]
 
-    # ── Secondary pending ─────────────────────────────────────────────────────
-    _, sec_vals = _find_sheet(sheets, "secondary")
+    # Secondary
+    sec_v = _find(sheets, "secondary")
     df_sec = pd.DataFrame()
-    if sec_vals:
-        df_sec = _to_df(sec_vals)
-        nexthop_c = next(
-            (c for c in df_sec.columns if "nexthop" in c.lower()),
-            next((c for c in df_sec.columns if "next" in c.lower()), None),
-        )
-        if nexthop_c:
-            df_sec = df_sec[[nexthop_c]].rename(columns={nexthop_c: "destination"})
+    if sec_v:
+        d = _df(sec_v)
+        nc = next((c for c in d.columns if "nexthop" in c.lower()), None)
+        if nc:
+            df_sec = d[[nc]].rename(columns={nc:"destination"})
             df_sec["destination"] = df_sec["destination"].astype(str).str.strip()
             df_sec = df_sec[df_sec["destination"].notna() & (df_sec["destination"] != "nan")]
 
-    # ── Load Capacity ─────────────────────────────────────────────────────────
-    _, cap_vals = _find_sheet(sheets, "load capacity", "capacity")
-    vehicle_caps = list(DEFAULT_VEHICLE_CAPS)
-    if cap_vals:
+    # Load Capacity
+    cap_v = _find(sheets, "load capacity", "capacity")
+    vcaps = list(DEFAULT_VEHICLE_CAPS)
+    if cap_v:
         parsed = []
-        for row in cap_vals:
+        for row in cap_v:
             if len(row) < 2:
                 continue
-            size_s = str(row[0]).strip()
-            cnt_s  = str(row[1]).strip().replace(",", "")
-            if re.search(r"\d+\s*(ft|feet)", size_s, re.I) and cnt_s.isdigit():
-                parsed.append((size_s, int(cnt_s)))
+            s = str(row[0]).strip(); n = str(row[1]).strip().replace(",","")
+            if re.search(r"\d+\s*(ft|feet)", s, re.I) and n.isdigit():
+                parsed.append((s, int(n)))
         if parsed:
-            vehicle_caps = parsed
+            vcaps = parsed
 
-    # ── DH Name Cut-Off Wise ──────────────────────────────────────────────────
-    _, dh_vals = _find_sheet(sheets, "dh name", "cut-off", "cutoff", "dh")
+    # DH Name Cut-Off Wise
+    dh_v = _find(sheets, "dh name", "cut-off", "cutoff", "dh")
     df_dh = pd.DataFrame()
-    if dh_vals:
-        # Detect header row (look for a row mentioning "dh" or "cutoff")
-        hdr_idx = 0
-        for i, row in enumerate(dh_vals[:6]):
-            joined = " ".join(str(c).lower() for c in row)
-            if any(kw in joined for kw in ("dh", "cutoff", "cut", "shift")):
-                hdr_idx = i
-                break
-
-        df_dh = _to_df(dh_vals, hdr_idx)
-        cols = list(df_dh.columns)
-        if len(cols) >= 4:
-            # Auto-detect cutoff column (contains HH:MM or HH:MM:SS patterns)
-            cutoff_col = None
-            for c in cols:
-                sample = df_dh[c].dropna().astype(str).head(30)
-                if sample.str.match(r"^\d{1,2}:\d{2}").sum() >= 3:
-                    cutoff_col = c
-                    break
-
-            dh_code_col = cols[0]
-            dh_name_col = cols[1]
-
-            if cutoff_col:
-                keep = [dh_code_col, dh_name_col]
-                # Also grab nexthop (col 2) if it exists and cutoff is col 3+
-                if len(cols) > 2 and cols[2] != cutoff_col:
+    if dh_v:
+        hi = 0
+        for i, row in enumerate(dh_v[:6]):
+            j = " ".join(str(c).lower() for c in row)
+            if any(k in j for k in ("dh","cutoff","cut","shift")):
+                hi = i; break
+        d = _df(dh_v, hi)
+        cols = list(d.columns)
+        if len(cols) >= 3:
+            coc = next(
+                (c for c in cols if d[c].dropna().astype(str).head(30).str.match(r"^\d{1,2}:\d{2}").sum() >= 3),
+                None,
+            )
+            if coc:
+                keep = [cols[0], cols[1]]
+                if len(cols) > 2 and cols[2] != coc:
                     keep.append(cols[2])
-                keep.append(cutoff_col)
+                keep.append(coc)
+                d = d[keep].copy()
+                d.columns = (["dh_code","dh_name","nexthop","cutoff"] if len(keep)==4
+                             else ["dh_code","dh_name","cutoff"])
+                d = d[d["dh_name"].astype(str).str.strip().ne("") & d["dh_name"].astype(str).ne("nan")]
+                d["cutoff"] = d["cutoff"].astype(str).str.strip()
+                d = d[d["cutoff"].str.match(r"^\d{1,2}:\d{2}", na=False)]
+                d["cutoff_display"] = d["cutoff"].str[:5]
+                df_dh = d
 
-                df_dh = df_dh[keep].copy()
-                df_dh.columns = (
-                    ["dh_code", "dh_name", "nexthop", "cutoff"]
-                    if len(keep) == 4
-                    else ["dh_code", "dh_name", "cutoff"]
-                )
-                df_dh = df_dh[df_dh["dh_name"].astype(str).str.strip() != ""]
-                df_dh = df_dh[df_dh["dh_name"].astype(str) != "nan"]
-                df_dh["cutoff"] = df_dh["cutoff"].astype(str).str.strip()
-                # Keep only rows with valid time
-                df_dh = df_dh[df_dh["cutoff"].str.match(r"^\d{1,2}:\d{2}", na=False)]
-                # Normalise to HH:MM for display
-                df_dh["cutoff_display"] = df_dh["cutoff"].str[:5]
-
-    return df_bag, df_semi, df_tote, df_sec, vehicle_caps, df_dh
+    return df_bag, df_semi, df_tote, df_sec, vcaps, df_dh
 
 
-# ── Load matching ──────────────────────────────────────────────────────────────
-
-def _match_dest(df: pd.DataFrame, dh_name: str, nexthop: str = "") -> pd.DataFrame:
-    """Return rows whose destination matches dh_name or nexthop (case-insensitive → fuzzy)."""
+# ── Load for a DH ──────────────────────────────────────────────────────────────
+def _match(df, dh_name, nexthop=""):
     if df.empty:
         return df
     targets = {_norm(dh_name)}
-    if nexthop and nexthop.lower() not in ("direct", "null", "nan", ""):
+    if nexthop and nexthop.lower() not in ("direct","null","nan",""):
         targets.add(_norm(nexthop))
-
     norms = df["destination"].apply(_norm)
-    # Exact norm match
     exact = df[norms.isin(targets)]
     if not exact.empty:
         return exact
-    # Fuzzy fallback (threshold 0.72)
     scores = norms.apply(lambda n: max(_fuzzy(n, t) for t in targets))
     return df[scores >= 0.72]
 
-
-def get_dh_load(dh_name: str, nexthop: str, df_bag, df_semi, df_tote, df_sec) -> dict:
-    bag_rows  = _match_dest(df_bag,  dh_name, nexthop)
-    semi_rows = _match_dest(df_semi, dh_name, nexthop)
-    tote_rows = _match_dest(df_tote, dh_name, nexthop)
-    sec_rows  = _match_dest(df_sec,  dh_name, nexthop)
-
-    bag_count     = len(bag_rows)
-    bag_shipments = int(bag_rows["shipment_count"].sum()) if not bag_rows.empty else 0
-    semi_count    = len(semi_rows)
-    tote_count    = len(tote_rows)
-    sec_count     = len(sec_rows)
-
+def dh_load(dh_name, nexthop, df_bag, df_semi, df_tote, df_sec):
+    br  = _match(df_bag,  dh_name, nexthop)
+    sr  = _match(df_semi, dh_name, nexthop)
+    tr  = _match(df_tote, dh_name, nexthop)
+    secr= _match(df_sec,  dh_name, nexthop)
     return dict(
-        bag_count=bag_count,
-        bag_shipments=bag_shipments,
-        semi_count=semi_count,
-        tote_count=tote_count,
-        secondary_count=sec_count,
+        bag_count     = len(br),
+        bag_shipments = int(br["ship_count"].sum()) if not br.empty else 0,
+        semi_count    = len(sr),
+        tote_count    = len(tr),
+        secondary_count = len(secr),
     )
 
 
-# ── ML model ───────────────────────────────────────────────────────────────────
-
-@st.cache_resource(show_spinner=False)
-def build_model(vehicle_caps_key: tuple):
-    """
-    Train a RandomForest on synthetic data derived from business capacity rules.
-    Features: [bag_shipments, semi_count, tote_count, secondary_count]
-    Label   : vehicle size
-    """
-    vehicle_caps = list(vehicle_caps_key)
-    max_cap      = max(c for _, c in vehicle_caps)
-    vehicles     = [v for v, _ in vehicle_caps]
-    caps         = [c for _, c in vehicle_caps]
-
-    rng = np.random.default_rng(42)
-    n   = 30_000
-    bag_s  = rng.integers(0, BAG_SHIPMENTS_PER_32FT * 2 + 1, n)
-    semi_s = rng.integers(0, SEMI_PER_32FT * 2 + 1, n)
-    tote_s = rng.integers(0, TOTES_PER_32FT * 2 + 1, n)
-    sec_s  = rng.integers(0, SECONDARY_PER_32FT * 2 + 1, n)
-
-    fracs  = (
-        bag_s  / BAG_SHIPMENTS_PER_32FT
-        + semi_s / SEMI_PER_32FT
-        + tote_s / TOTES_PER_32FT
-        + sec_s  / SECONDARY_PER_32FT
+# ── Vehicle logic ──────────────────────────────────────────────────────────────
+def load_to_frac(load):
+    return (
+        load["bag_shipments"] / BAG_SHIPMENTS_32FT
+        + load["semi_count"]  / SEMI_32FT
+        + load["tote_count"]  / TOTES_32FT
+        + load["secondary_count"] / SECONDARY_32FT
     )
-    required = fracs * max_cap
 
-    labels = []
-    for req in required:
-        chosen = vehicles[-1]
-        for v, c in zip(vehicles, caps):
-            if c >= req:
-                chosen = v
-                break
-        labels.append(chosen)
+def frac_to_equiv(frac, max_cap):
+    """Fraction of 32Ft → equivalent shipment count."""
+    return frac * max_cap
 
-    X = np.column_stack([bag_s, semi_s, tote_s, sec_s])
-    le = LabelEncoder()
-    le.fit(vehicles)
-    y = le.transform(labels)
-
-    clf = RandomForestClassifier(n_estimators=120, max_depth=14, random_state=42, n_jobs=-1)
-    clf.fit(X, y)
-    return clf, le
-
-
-def predict_vehicle(load: dict, vehicle_caps: list):
+def recommend_vehicle(total_frac, vcaps):
     """
-    Returns (recommended_vehicles, confidence_pct, alternatives, utilisation_frac).
-    Uses RandomForest when sklearn is available, falls back to rule-based.
+    Pick the smallest vehicle that fits the load (= highest utilisation).
+    Returns (vehicle_name, capacity, utilisation_frac, trucks_needed).
     """
-    max_cap = max(c for _, c in vehicle_caps)
-    vehicles_list = [v for v, _ in vehicle_caps]
-    caps_list     = [c for _, c in vehicle_caps]
-
-    bag_s  = load["bag_shipments"]
-    semi_s = load["semi_count"]
-    tote_s = load["tote_count"]
-    sec_s  = load["secondary_count"]
-
-    bag_frac  = bag_s  / BAG_SHIPMENTS_PER_32FT
-    semi_frac = semi_s / SEMI_PER_32FT
-    tote_frac = tote_s / TOTES_PER_32FT
-    sec_frac  = sec_s  / SECONDARY_PER_32FT
-    total_frac = bag_frac + semi_frac + tote_frac + sec_frac
+    max_cap  = max(c for _, c in vcaps)
+    req_cap  = total_frac * max_cap
 
     if total_frac == 0:
-        return [], 0, [], 0.0
+        return None, 0, 0.0, 0
 
-    # Multi-vehicle scenario
-    n_trucks = int(np.ceil(total_frac))
-    if n_trucks > 1:
-        remainder_frac = total_frac - (n_trucks - 1)
-        req_last = remainder_frac * max_cap
-        last_v = next((v for v, c in vehicle_caps if c >= req_last), "32 Ft")
-        chosen = ["32 Ft"] * (n_trucks - 1) + [last_v]
-        return chosen, 88, [], total_frac
+    if total_frac > 1:
+        n = int(np.ceil(total_frac))
+        # last partial truck
+        rem_frac = total_frac - (n - 1)
+        rem_cap  = rem_frac * max_cap
+        last_v   = next((v for v, c in vcaps if c >= rem_cap), vcaps[-1][0])
+        return f"32 Ft × {n-1} + {last_v}", max_cap, rem_frac, n
 
-    # Single vehicle: use RandomForest if available
-    if SKLEARN_OK:
-        caps_key = tuple(vehicle_caps)
-        clf, le = build_model(caps_key)
-        X_pred  = np.array([[bag_s, semi_s, tote_s, sec_s]])
-        proba   = clf.predict_proba(X_pred)[0]
-        # Sort by descending probability
-        order   = np.argsort(proba)[::-1]
-        best_idx     = order[0]
-        best_vehicle = le.classes_[best_idx]
-        confidence   = round(float(proba[best_idx]) * 100, 1)
+    for v, c in vcaps:
+        if c >= req_cap:
+            return v, c, req_cap / c, 1
 
-        # Utilisation inside the predicted vehicle
-        pred_cap = next((c for v, c in vehicle_caps if v == best_vehicle), max_cap)
-        util     = min(total_frac * max_cap / pred_cap, 1.0)
+    return vcaps[-1][0], vcaps[-1][1], req_cap / vcaps[-1][1], 1
 
-        # Alternatives (next 2 by probability)
-        alts = []
-        for idx in order[1:3]:
-            alt_v   = le.classes_[idx]
-            alt_cap = next((c for v, c in vehicle_caps if v == alt_v), max_cap)
-            alt_util = min(total_frac * max_cap / alt_cap, 1.0)
-            alts.append((alt_v, round(float(proba[idx]) * 100, 1), round(alt_util * 100)))
+def remaining_to_target(current_equiv, vehicle_cap, max_cap, target=TARGET_UTIL):
+    """How many more equivalent shipments to reach target utilisation."""
+    target_equiv = vehicle_cap * target
+    return max(0, target_equiv - current_equiv)
 
-        return [best_vehicle], round(confidence), alts, round(util, 3)
-
-    # Fallback: rule-based
-    required = total_frac * max_cap
-    for v, c in vehicle_caps:
-        if c >= required:
-            util = required / c
-            conf = 90 if 0.6 <= util <= 0.85 else (70 if util < 0.6 else 75)
-            # next 2 alternatives
-            remaining = [(av, ac) for av, ac in vehicle_caps if ac > c][:2]
-            alts = [(av, 0, round(required / ac * 100)) for av, ac in remaining]
-            return [v], conf, alts, round(util, 3)
-
-    return ["32 Ft"], 60, [], 1.0
+def breakdown_remaining(equiv_remaining, max_cap):
+    """Express remaining equivalent capacity as bags / semi-large / totes."""
+    frac = equiv_remaining / max_cap if max_cap else 0
+    return dict(
+        bags      = int(frac * BAG_SHIPMENTS_32FT / SHIPMENTS_PER_BAG),
+        semi      = int(frac * SEMI_32FT),
+        totes     = int(frac * TOTES_32FT),
+        secondary = int(frac * SECONDARY_32FT),
+    )
 
 
 # ── UI helpers ─────────────────────────────────────────────────────────────────
-
-def metric_card(label: str, value, sub: str = "", accent: str = "#2563eb"):
+def kcard(label, val, sub="", ac="#2563eb"):
     st.markdown(
-        f"""<div class="metric-card" style="--accent:{accent}">
-            <div class="metric-label">{label}</div>
-            <div class="metric-value">{value}</div>
-            {'<div class="metric-sub">' + sub + '</div>' if sub else ''}
-        </div>""",
-        unsafe_allow_html=True,
-    )
+        f'<div class="kcard" style="--ac:{ac}">'
+        f'<div class="klabel">{label}</div>'
+        f'<div class="kvalue">{val}</div>'
+        f'{"<div class=ksub>"+sub+"</div>" if sub else ""}'
+        f'</div>', unsafe_allow_html=True)
 
-
-def progress_bar(label: str, val: int, cap: int, unit: str, color: str):
+def pbar(label, val, cap, unit, color):
     pct = min(100, round(val / cap * 100, 1)) if cap else 0
     st.markdown(
-        f"""<div style="margin-bottom:14px">
-            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
-                <span style="font-weight:600;color:#334155">{label}</span>
-                <span style="color:#64748b">{val:,} / {cap:,} {unit} &nbsp;·&nbsp; <b>{pct}%</b></span>
-            </div>
-            <div class="bar-track">
-                <div class="bar-fill" style="width:{pct}%;background:{color}"></div>
-            </div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
+        f'<div style="margin-bottom:12px">'
+        f'<div style="display:flex;justify-content:space-between;font-size:13px">'
+        f'<span style="font-weight:600;color:#334155">{label}</span>'
+        f'<span style="color:#64748b">{val:,} / {cap:,} {unit} &nbsp;·&nbsp; <b>{pct}%</b></span>'
+        f'</div>'
+        f'<div class="bartrack"><div class="barfill" style="width:{pct}%;background:{color}"></div></div>'
+        f'</div>', unsafe_allow_html=True)
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
-
+# ── App ─────────────────────────────────────────────────────────────────────────
 def main():
-    # ── Sidebar ────────────────────────────────────────────────────────────────
+    # Sidebar
     with st.sidebar:
         st.markdown("## 🚛 Vehicle Predictor")
         st.caption("Flipkart · Hajipur Mother Hub")
         st.divider()
-        st.markdown("**How it works**")
-        st.markdown(
-            """
-- Reads live floor data from Google Sheets
-- Aggregates Bags, Semi-Large, Totes & Secondary pending by DH
-- A **RandomForest ML model** (trained on 30 K synthetic samples derived from capacity rules) predicts the optimal vehicle
-- Confidence = model probability score
-""",
-            unsafe_allow_html=True,
-        )
+        st.markdown("""
+**How to use**
+1. Select one or more **cutoffs** from the table
+2. Select one or more **DHs** from the filtered list
+3. See combined floor load & vehicle recommendation
+4. Use **Manual Selector** to explore any vehicle size
+""")
         st.divider()
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-        st.markdown(
-            f"<div style='font-size:11px;color:#94a3b8;margin-top:8px'>Cache TTL: 5 min</div>",
-            unsafe_allow_html=True,
-        )
 
-    # ── Title ──────────────────────────────────────────────────────────────────
     st.markdown("## 🚛 Vehicle Load Prediction Dashboard")
-    st.markdown("*Floor load analysis + ML-based vehicle recommendation · Hajipur MH*")
+    st.markdown("*Hajipur Mother Hub — floor load analysis & vehicle recommendation*")
     st.divider()
 
-    # ── Load data ──────────────────────────────────────────────────────────────
+    # Load data
     with st.spinner("Loading data from Google Sheets…"):
         try:
-            raw = load_all_sheets()
-            sheet_key = tuple(sorted(raw.keys()))
-            df_bag, df_semi, df_tote, df_sec, vehicle_caps, df_dh = parse_data(sheet_key)
-        except Exception as exc:
-            st.error(f"❌ Could not load sheet: {exc}")
-            st.info("Make sure `GOOGLE_SERVICE_ACCOUNT` is set in Streamlit secrets and the sheet is shared with the service account.")
+            raw  = load_sheets()
+            _key = tuple(sorted(raw.keys()))
+            df_bag, df_semi, df_tote, df_sec, vcaps, df_dh = parse(_key)
+        except Exception as e:
+            st.error(f"❌ Could not load sheet: {e}")
             st.stop()
 
-    # Dataset summary
+    max_cap = max(c for _, c in vcaps)
+
+    # ── Overview cards ─────────────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        metric_card("Total Bags on Floor",      f"{len(df_bag):,}",  f"{df_bag['shipment_count'].sum() if not df_bag.empty else 0:,} shipments", "#f59e0b")
-    with c2:
-        metric_card("Semi-Large Shipments",     f"{len(df_semi):,}", "Floor pending", "#3b82f6")
-    with c3:
-        metric_card("Totes on Floor",           f"{len(df_tote):,}", "Pending dispatch", "#8b5cf6")
-    with c4:
-        metric_card("Secondary Pending",        f"{len(df_sec):,}",  "Sorted, not bagged", "#ef4444")
+    with c1: kcard("🛍️ Total Bags on Floor",    f"{len(df_bag):,}",
+                    f"{df_bag['ship_count'].sum() if not df_bag.empty else 0:,} shipments", "#f59e0b")
+    with c2: kcard("📦 Semi-Large Shipments",    f"{len(df_semi):,}", "Floor pending", "#3b82f6")
+    with c3: kcard("🧺 Totes on Floor",          f"{len(df_tote):,}", "Pending dispatch", "#8b5cf6")
+    with c4: kcard("📋 Secondary Pending",        f"{len(df_sec):,}",  "Sorted, not bagged", "#ef4444")
 
     st.divider()
 
-    # ── Step 1: Cutoff ─────────────────────────────────────────────────────────
+    # ── Step 1: Cutoff table ───────────────────────────────────────────────────
     if df_dh.empty:
-        st.warning("⚠️ DH Name Cut-Off data not found. Check sheet name matches 'DH Name Cut-Off Wise'.")
+        st.warning("⚠️ DH Name Cut-Off sheet not found.")
         return
 
-    cutoffs = sorted(df_dh["cutoff_display"].dropna().unique().tolist())
-    if not cutoffs:
-        st.warning("No cutoff times parsed.")
-        return
-
-    st.markdown('<div class="step-header">Step 1 — Choose Cutoff</div>', unsafe_allow_html=True)
-    selected_cutoff = st.selectbox(
-        "🕐 TMS Cutoff", cutoffs,
-        help="All DHs dispatching at this cut-off time will be listed in Step 2"
+    cutoff_tbl = (
+        df_dh.groupby("cutoff_display")
+        .agg(DH_Count=("dh_name", "nunique"))
+        .reset_index()
+        .rename(columns={"cutoff_display": "Cutoff", "DH_Count": "# DHs"})
+        .sort_values("Cutoff")
+        .reset_index(drop=True)
     )
 
-    filtered_dh = df_dh[df_dh["cutoff_display"] == selected_cutoff].copy()
-    dh_options  = sorted(filtered_dh["dh_name"].dropna().unique().tolist())
+    st.markdown('<div class="sec-hdr">Step 1 — Select Cutoff(s) &nbsp;·&nbsp; click rows to select, Shift+click for multi</div>', unsafe_allow_html=True)
+    cut_evt = st.dataframe(
+        cutoff_tbl,
+        on_select="rerun",
+        selection_mode="multi-row",
+        use_container_width=True,
+        hide_index=True,
+        height=min(420, (len(cutoff_tbl) + 1) * 35 + 10),
+    )
+    sel_cutoffs = [cutoff_tbl.iloc[i]["Cutoff"] for i in cut_evt.selection.rows]
 
-    if not dh_options:
-        st.info("No DHs found for this cutoff.")
+    if not sel_cutoffs:
+        st.info("👆 Select one or more cutoff rows to continue.")
         return
 
-    # ── Step 2: DH ─────────────────────────────────────────────────────────────
-    st.markdown(f'<div class="step-header" style="margin-top:16px">Step 2 — Choose Destination Hub &nbsp;·&nbsp; {len(dh_options)} DHs at {selected_cutoff}</div>', unsafe_allow_html=True)
-    selected_dh = st.selectbox("🏭 DH Name", dh_options)
+    # ── Step 2: DH table ──────────────────────────────────────────────────────
+    filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
+    dh_tbl  = (
+        filt_dh[["dh_code","dh_name","cutoff_display"]]
+        .drop_duplicates("dh_name")
+        .rename(columns={"dh_code":"DH Code","dh_name":"DH Name","cutoff_display":"Cutoff"})
+        .sort_values("DH Name")
+        .reset_index(drop=True)
+    )
 
-    # Get nexthop for better matching
-    row_dh  = filtered_dh[filtered_dh["dh_name"] == selected_dh].iloc[0]
-    nexthop = str(row_dh.get("nexthop", "")).strip() if "nexthop" in row_dh.index else ""
-    dh_code = str(row_dh.get("dh_code", "")).strip()
+    st.markdown(
+        f'<div class="sec-hdr" style="margin-top:18px">Step 2 — Select DH(s) &nbsp;·&nbsp; {len(dh_tbl)} DHs across cutoff(s) {", ".join(sel_cutoffs)}</div>',
+        unsafe_allow_html=True,
+    )
+    dh_evt = st.dataframe(
+        dh_tbl,
+        on_select="rerun",
+        selection_mode="multi-row",
+        use_container_width=True,
+        hide_index=True,
+        height=min(480, (len(dh_tbl) + 1) * 35 + 10),
+    )
+    sel_dh_rows = [dh_tbl.iloc[i] for i in dh_evt.selection.rows]
 
-    # ── Load Analysis ──────────────────────────────────────────────────────────
+    if not sel_dh_rows:
+        st.info("👆 Select one or more DH rows to continue.")
+        return
+
+    # ── Aggregate load for selected DHs ───────────────────────────────────────
     st.divider()
-    st.markdown(f"### 📦 Floor Load — `{selected_dh}` &nbsp; `{dh_code}` &nbsp; ⏱ cutoff {selected_cutoff}")
+    sel_names = [r["DH Name"] for r in sel_dh_rows]
+    st.markdown(f"### 📦 Combined Floor Load — {len(sel_names)} DH(s) selected")
+    with st.expander("Selected DHs", expanded=False):
+        st.write(", ".join(sel_names))
 
-    with st.spinner("Aggregating floor data…"):
-        load = get_dh_load(selected_dh, nexthop, df_bag, df_semi, df_tote, df_sec)
+    agg = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
+    with st.spinner("Aggregating load…"):
+        for row in sel_dh_rows:
+            dh_n = row["DH Name"]
+            dh_r = filt_dh[filt_dh["dh_name"] == dh_n]
+            nx   = str(dh_r.iloc[0].get("nexthop","")) if "nexthop" in dh_r.columns and len(dh_r) else ""
+            ld   = dh_load(dh_n, nx, df_bag, df_semi, df_tote, df_sec)
+            for k in agg:
+                agg[k] += ld[k]
 
-    total_shipments = (
-        load["bag_shipments"]
-        + load["semi_count"]
-        + load["tote_count"]
-        + load["secondary_count"]
-    )
+    total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"] + agg["secondary_count"]
 
-    # Metrics row
     m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        metric_card("🛍️ Bags",         f"{load['bag_count']:,}",  f"{load['bag_shipments']:,} shipments inside", "#f59e0b")
-    with m2:
-        metric_card("📦 Semi-Large",   f"{load['semi_count']:,}", "Shipments on floor", "#3b82f6")
-    with m3:
-        metric_card("🧺 Totes",        f"{load['tote_count']:,}", "Totes on floor", "#8b5cf6")
-    with m4:
-        metric_card("📋 Secondary",    f"{load['secondary_count']:,}", "Sorted, pending bag", "#ef4444")
+    with m1: kcard("🛍️ Bags",         f"{agg['bag_count']:,}",    f"{agg['bag_shipments']:,} shipments inside", "#f59e0b")
+    with m2: kcard("📦 Semi-Large",   f"{agg['semi_count']:,}",   "Shipments on floor", "#3b82f6")
+    with m3: kcard("🧺 Totes",        f"{agg['tote_count']:,}",   "Totes on floor", "#8b5cf6")
+    with m4: kcard("📋 Secondary",    f"{agg['secondary_count']:,}", "Sorted, pending bag", "#ef4444")
 
-    if total_shipments == 0:
-        st.success(f"✅ No pending floor load for **{selected_dh}**. All clear!")
+    if total_ship == 0:
+        st.success("✅ No pending floor load for the selected DHs.")
         return
 
-    st.markdown(f"<br><div style='font-size:15px;color:#475569'>**Total equivalent shipments:** <b style='font-size:22px;color:#1e293b'>{total_shipments:,}</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:14px;color:#475569;margin:10px 0'>"
+                f"Total equivalent shipments: <b style='font-size:22px;color:#1e293b'>{total_ship:,}</b></div>",
+                unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    # ── Pie + Vehicle recommendation ──────────────────────────────────────────
+    st.divider()
+    col_pie, col_rec = st.columns([1, 1])
 
-    # ── Prediction + Pie ───────────────────────────────────────────────────────
-    col_pie, col_pred = st.columns([1, 1])
+    total_frac = load_to_frac(agg)
+    req_equiv  = frac_to_equiv(total_frac, max_cap)
 
     with col_pie:
         labels = ["Bag Shipments", "Semi-Large", "Totes", "Secondary Pending"]
-        values = [
-            load["bag_shipments"], load["semi_count"],
-            load["tote_count"],    load["secondary_count"],
-        ]
-        colors = ["#f59e0b", "#3b82f6", "#8b5cf6", "#ef4444"]
-        non_zero = [(l, v, c) for l, v, c in zip(labels, values, colors) if v > 0]
-
+        vals   = [agg["bag_shipments"], agg["semi_count"], agg["tote_count"], agg["secondary_count"]]
+        colors = ["#f59e0b","#3b82f6","#8b5cf6","#ef4444"]
+        nz = [(l,v,c) for l,v,c in zip(labels,vals,colors) if v>0]
         fig = go.Figure(go.Pie(
-            labels=[x[0] for x in non_zero],
-            values=[x[1] for x in non_zero],
-            marker_colors=[x[2] for x in non_zero],
-            hole=0.55,
-            textinfo="label+percent",
-            textfont_size=12,
+            labels=[x[0] for x in nz], values=[x[1] for x in nz],
+            marker_colors=[x[2] for x in nz], hole=0.55,
+            textinfo="label+percent", textfont_size=12,
         ))
         fig.update_layout(
-            showlegend=False,
-            margin=dict(t=10, b=10, l=10, r=10),
-            height=300,
-            annotations=[dict(
-                text=f"<b>{total_shipments:,}</b><br><span style='font-size:11px'>Total</span>",
-                x=0.5, y=0.5, font_size=15, showarrow=False,
-            )],
+            showlegend=False, height=300,
+            margin=dict(t=10,b=10,l=10,r=10),
+            annotations=[dict(text=f"<b>{total_ship:,}</b><br>Total",
+                              x=0.5,y=0.5,font_size=14,showarrow=False)],
         )
         st.markdown("**Load Bifurcation**")
         st.plotly_chart(fig, use_container_width=True)
 
-    with col_pred:
-        vehicles, confidence, alternatives, util = predict_vehicle(load, vehicle_caps)
+    with col_rec:
+        best_v, best_cap, best_util, n_trucks = recommend_vehicle(total_frac, vcaps)
 
-        if not vehicles:
-            st.warning("Could not predict vehicle — check load data.")
+        if best_v is None:
+            st.warning("No load to predict.")
         else:
-            veh_str  = " + ".join(vehicles)
-            conf_color = (
-                "#16a34a" if confidence >= 75
-                else "#f59e0b" if confidence >= 55
-                else "#ef4444"
-            )
-            util_pct = round(util * 100) if util <= 1 else round(util * 100)
+            util_pct  = round(best_util * 100, 1)
+            conf_col  = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
             st.markdown(
-                f"""<div class="predict-card">
-                    <div class="pred-label">🤖 ML Recommendation (RandomForest)</div>
-                    <div class="pred-vehicle">{veh_str}</div>
-                    <div style="display:flex;gap:24px;margin-top:12px">
-                        <div>
-                            <div style="font-size:12px;opacity:.75">Confidence</div>
-                            <div style="font-size:26px;font-weight:800;color:{conf_color}">{confidence}%</div>
-                        </div>
-                        <div>
-                            <div style="font-size:12px;opacity:.75">Load Utilization</div>
-                            <div style="font-size:26px;font-weight:800">{min(util_pct,100)}%</div>
-                        </div>
-                        <div>
-                            <div style="font-size:12px;opacity:.75">Trucks Needed</div>
-                            <div style="font-size:26px;font-weight:800">{len(vehicles)}</div>
-                        </div>
-                    </div>
-                </div>""",
+                f'<div class="predcard">'
+                f'<div style="font-size:13px;opacity:.8;font-weight:500">🎯 Recommended Vehicle</div>'
+                f'<div style="font-size:44px;font-weight:900;margin:6px 0 4px;letter-spacing:-1px">{best_v}</div>'
+                f'<div style="display:flex;gap:24px;margin-top:10px">'
+                f'<div><div style="font-size:12px;opacity:.75">Load Utilization</div>'
+                f'<div style="font-size:26px;font-weight:800;color:{conf_col}">{util_pct}%</div></div>'
+                f'<div><div style="font-size:12px;opacity:.75">Trucks Needed</div>'
+                f'<div style="font-size:26px;font-weight:800">{n_trucks}</div></div>'
+                f'<div><div style="font-size:12px;opacity:.75">Equiv. Shipments</div>'
+                f'<div style="font-size:26px;font-weight:800">{int(req_equiv):,}</div></div>'
+                f'</div></div>',
                 unsafe_allow_html=True,
             )
 
-            if alternatives:
-                st.markdown("<br><b>Alternative Vehicles</b>", unsafe_allow_html=True)
-                for alt_v, alt_conf, alt_util_pct in alternatives:
+            # Remaining to reach 90 %
+            if n_trucks == 1 and isinstance(best_cap, int):
+                rem_eq = remaining_to_target(req_equiv, best_cap, max_cap)
+                rem_bd = breakdown_remaining(rem_eq, max_cap)
+                target_eq = int(best_cap * TARGET_UTIL)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                if rem_eq > 0:
                     st.markdown(
-                        f"""<div class="alt-card">
-                            <span style="font-weight:700;color:#1e293b">{alt_v}</span>
-                            <span style="color:#64748b;font-size:13px">
-                                {alt_util_pct}% load &nbsp;·&nbsp; {alt_conf}% confidence
-                            </span>
-                        </div>""",
+                        f"<div style='background:#fefce8;border:1px solid #fde047;border-radius:10px;"
+                        f"padding:12px 16px;font-size:13px'>"
+                        f"<b>📈 To reach 90% utilization ({target_eq:,} shipments):</b><br>"
+                        f"Can accommodate <b>{int(rem_eq):,}</b> more equivalent shipments, e.g.:<br>"
+                        f"&nbsp;&nbsp;• <b>{rem_bd['bags']:,}</b> more bags &nbsp;|&nbsp; "
+                        f"<b>{rem_bd['semi']:,}</b> more semi-large &nbsp;|&nbsp; "
+                        f"<b>{rem_bd['totes']:,}</b> more totes &nbsp;|&nbsp; "
+                        f"<b>{rem_bd['secondary']:,}</b> secondary"
+                        f"</div>",
                         unsafe_allow_html=True,
                     )
+                else:
+                    st.success(f"✅ Vehicle is at ≥90% utilization — optimal load!")
 
     # ── Capacity bars ──────────────────────────────────────────────────────────
     st.divider()
-    st.markdown("### 📊 Capacity Utilization *(per type, relative to 32 Ft truck)*")
+    st.markdown("### 📊 Capacity Utilization &nbsp;*(per type, relative to 32 Ft truck)*")
+    pbar("🛍️ Bags",        agg["bag_count"],          BAG_SHIPMENTS_32FT // SHIPMENTS_PER_BAG, "bags",      "#f59e0b")
+    pbar("📦 Semi-Large",  agg["semi_count"],          SEMI_32FT,                               "shipments", "#3b82f6")
+    pbar("🧺 Totes",       agg["tote_count"],          TOTES_32FT,                              "totes",     "#8b5cf6")
+    pbar("📋 Secondary",   agg["secondary_count"],     SECONDARY_32FT,                          "shipments", "#ef4444")
 
-    bars = [
-        ("🛍️ Bags",           load["bag_count"],      BAG_SHIPMENTS_PER_32FT // SHIPMENTS_PER_BAG, "bags",      "#f59e0b"),
-        ("📦 Semi-Large",     load["semi_count"],     SEMI_PER_32FT,                               "shipments", "#3b82f6"),
-        ("🧺 Totes",          load["tote_count"],     TOTES_PER_32FT,                              "totes",     "#8b5cf6"),
-        ("📋 Secondary",      load["secondary_count"],SECONDARY_PER_32FT,                          "shipments", "#ef4444"),
-    ]
-    for label, val, cap, unit, color in bars:
-        progress_bar(label, val, cap, unit, color)
-
-    # ── Gauge ──────────────────────────────────────────────────────────────────
-    max_cap = max(c for _, c in vehicle_caps)
-    total_frac = (
-        load["bag_shipments"] / BAG_SHIPMENTS_PER_32FT
-        + load["semi_count"]  / SEMI_PER_32FT
-        + load["tote_count"]  / TOTES_PER_32FT
-        + load["secondary_count"] / SECONDARY_PER_32FT
-    )
+    # Gauge
     overall_pct = round(min(total_frac, 1.0) * 100, 1)
-
-    _, gcol, _ = st.columns([1, 1.4, 1])
-    with gcol:
+    _, gc2, _ = st.columns([1, 1.4, 1])
+    with gc2:
         fig_g = go.Figure(go.Indicator(
             mode="gauge+number",
             value=overall_pct,
-            number={"suffix": "%", "font": {"size": 38, "color": "#1e293b"}},
-            title={"text": "Overall 32 Ft Equivalent Utilization", "font": {"size": 13}},
+            number={"suffix":"%","font":{"size":36,"color":"#1e293b"}},
+            title={"text":"Overall 32 Ft Equivalent Utilization","font":{"size":13}},
             gauge={
-                "axis": {"range": [0, 100], "ticksuffix": "%"},
-                "bar": {"color": "#2563eb", "thickness": 0.28},
-                "steps": [
-                    {"range": [0, 50],  "color": "#dbeafe"},
-                    {"range": [50, 80], "color": "#bfdbfe"},
-                    {"range": [80, 100],"color": "#fef3c7"},
+                "axis":{"range":[0,100],"ticksuffix":"%"},
+                "bar":{"color":"#2563eb","thickness":0.26},
+                "steps":[
+                    {"range":[0,60],"color":"#dbeafe"},
+                    {"range":[60,85],"color":"#bfdbfe"},
+                    {"range":[85,100],"color":"#bbf7d0"},
                 ],
-                "threshold": {
-                    "line": {"color": "#ef4444", "width": 3},
-                    "thickness": 0.75, "value": 90,
-                },
+                "threshold":{"line":{"color":"#f59e0b","width":3},"thickness":0.75,"value":90},
             },
         ))
-        fig_g.update_layout(height=280, margin=dict(t=30, b=0, l=20, r=20))
+        fig_g.update_layout(height=280, margin=dict(t=30,b=0,l=20,r=20))
         st.plotly_chart(fig_g, use_container_width=True)
 
     if total_frac > 1:
-        trucks = int(np.ceil(total_frac))
-        st.warning(
-            f"⚠️ Load exceeds 1 truck capacity by **{round((total_frac-1)*100)}%** "
-            f"— minimum **{trucks} vehicles** required."
+        st.warning(f"⚠️ Load exceeds 1 truck — minimum **{int(np.ceil(total_frac))} vehicles** required.")
+
+    # ── Manual Vehicle Selector ────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 🔧 Manual Vehicle Selector")
+    st.caption("Choose any vehicle to see how much it can carry and what will remain on floor.")
+
+    vnames = [v for v, _ in vcaps]
+    sel_v  = st.selectbox("Select Vehicle Size", vnames,
+                           index=next((i for i,(v,_) in enumerate(vcaps) if v==best_v), 0)
+                           if best_v and best_v in vnames else 0)
+
+    sel_cap = next(c for v, c in vcaps if v == sel_v)
+    sel_frac = sel_cap / max_cap               # fraction of 32 Ft
+    load_eq  = req_equiv                        # equivalent shipments needed
+
+    # What fits in this vehicle
+    can_fit_eq  = min(load_eq, sel_cap)         # equiv shipments that fit
+    cant_fit_eq = max(0, load_eq - sel_cap)     # equiv that won't fit
+
+    can_fit_frac  = can_fit_eq  / max_cap
+    cant_fit_frac = cant_fit_eq / max_cap
+
+    util_sel = round(can_fit_eq / sel_cap * 100, 1) if sel_cap else 0
+    util_col  = "#16a34a" if util_sel >= 80 else "#f59e0b" if util_sel >= 50 else "#ef4444"
+
+    rem_to_90_eq = remaining_to_target(can_fit_eq, sel_cap, max_cap)
+    rem_to_90_bd = breakdown_remaining(rem_to_90_eq, max_cap)
+
+    # What can be loaded (proportional breakdown)
+    can_bags_ships = int(can_fit_frac * BAG_SHIPMENTS_32FT)
+    can_bags       = can_bags_ships // SHIPMENTS_PER_BAG
+    can_semi       = int(can_fit_frac * SEMI_32FT)
+    can_totes      = int(can_fit_frac * TOTES_32FT)
+    can_sec        = int(can_fit_frac * SECONDARY_32FT)
+
+    # What stays on floor (proportional)
+    rem_bags_ships = int(cant_fit_frac * BAG_SHIPMENTS_32FT)
+    rem_bags       = rem_bags_ships // SHIPMENTS_PER_BAG
+    rem_semi       = int(cant_fit_frac * SEMI_32FT)
+    rem_totes      = int(cant_fit_frac * TOTES_32FT)
+    rem_sec        = int(cant_fit_frac * SECONDARY_32FT)
+
+    r1, r2 = st.columns(2)
+    with r1:
+        st.markdown(
+            f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
+            f'<div class="klabel">🚛 {sel_v} Capacity</div>'
+            f'<div style="font-size:28px;font-weight:800;color:#1e293b;margin:4px 0">'
+            f'{sel_cap:,} <span style="font-size:14px;color:#64748b">shipments</span></div>'
+            f'<hr style="border:none;border-top:1px solid #f1f5f9;margin:10px 0">'
+            f'<div class="klabel">Current Utilization</div>'
+            f'<div style="font-size:32px;font-weight:900;color:{util_col}">{util_sel}%</div>'
+            f'<div style="margin-top:10px">'
+            f'<div class="bartrack"><div class="barfill" style="width:{util_sel}%;background:{util_col}"></div></div>'
+            f'</div>'
+            f'<div style="font-size:13px;color:#64748b;margin-top:10px">'
+            f'Loading <b>{int(can_fit_eq):,}</b> of <b>{int(load_eq):,}</b> equivalent shipments</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
 
-    # ── Vehicle Reference ──────────────────────────────────────────────────────
-    with st.expander("🚛 Vehicle Capacity Reference Table", expanded=False):
-        max_v = max(c for _, c in vehicle_caps)
-        cap_df = pd.DataFrame(vehicle_caps, columns=["Vehicle", "Max Shipments (32 Ft equiv.)"])
-        cap_df["% of 32 Ft"] = cap_df["Max Shipments (32 Ft equiv.)"].apply(
-            lambda x: f"{x/max_v*100:.1f}%"
+    with r2:
+        st.markdown(
+            f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
+            f'<div class="klabel" style="color:#16a34a">✅ Fits in {sel_v}</div>'
+            f'<div style="font-size:13px;margin:8px 0 12px">'
+            f'&nbsp;🛍️ <b>{can_bags:,}</b> bags &nbsp;({can_bags_ships:,} shipments)<br>'
+            f'&nbsp;📦 <b>{can_semi:,}</b> semi-large shipments<br>'
+            f'&nbsp;🧺 <b>{can_totes:,}</b> totes<br>'
+            f'&nbsp;📋 <b>{can_sec:,}</b> secondary shipments'
+            f'</div>'
+            f'<hr style="border:none;border-top:1px solid #f1f5f9;margin:0 0 10px">'
+            f'<div class="klabel" style="color:#ef4444">⏳ Remains on Floor</div>'
+            f'<div style="font-size:13px;margin:8px 0">'
+            f'&nbsp;🛍️ <b>{rem_bags:,}</b> bags &nbsp;({rem_bags_ships:,} shipments)<br>'
+            f'📦 <b>{rem_semi:,}</b> semi-large &nbsp;|&nbsp; '
+            f'🧺 <b>{rem_totes:,}</b> totes &nbsp;|&nbsp; '
+            f'📋 <b>{rem_sec:,}</b> secondary'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
-        cap_df["Bags Capacity"]      = (cap_df["Max Shipments (32 Ft equiv.)"] / max_v * (BAG_SHIPMENTS_PER_32FT // SHIPMENTS_PER_BAG)).astype(int)
-        cap_df["Semi-Large Capacity"]= (cap_df["Max Shipments (32 Ft equiv.)"] / max_v * SEMI_PER_32FT).astype(int)
-        cap_df["Totes Capacity"]     = (cap_df["Max Shipments (32 Ft equiv.)"] / max_v * TOTES_PER_32FT).astype(int)
-        st.dataframe(cap_df, use_container_width=True, hide_index=True)
 
-    # ── All DHs for this cutoff ────────────────────────────────────────────────
-    with st.expander(f"📋 All DHs at cutoff {selected_cutoff} ({len(dh_options)} total)", expanded=False):
-        st.dataframe(
-            filtered_dh[["dh_code", "dh_name"]].reset_index(drop=True).rename(
-                columns={"dh_code": "DH Code", "dh_name": "DH Name"}
-            ),
-            use_container_width=True,
-            hide_index=True,
+    # Remaining to 90 % for selected vehicle
+    if rem_to_90_eq > 0:
+        st.markdown(
+            f"<div style='background:#fefce8;border:1px solid #fde047;border-radius:10px;"
+            f"padding:12px 16px;font-size:13px;margin-top:8px'>"
+            f"<b>📈 To reach 90% in {sel_v} ({int(sel_cap*TARGET_UTIL):,} shipments):</b>&nbsp; "
+            f"Can load <b>{int(rem_to_90_eq):,}</b> more equivalent shipments — e.g. "
+            f"<b>{rem_to_90_bd['bags']:,}</b> bags &nbsp;|&nbsp; "
+            f"<b>{rem_to_90_bd['semi']:,}</b> semi-large &nbsp;|&nbsp; "
+            f"<b>{rem_to_90_bd['totes']:,}</b> totes"
+            f"</div>",
+            unsafe_allow_html=True,
         )
+
+    # ── All vehicles comparison table ──────────────────────────────────────────
+    with st.expander("📋 All Vehicles — Comparison Table", expanded=False):
+        rows = []
+        for v, c in vcaps:
+            f    = min(load_eq, c)
+            u    = round(f / c * 100, 1) if c else 0
+            left = max(0, load_eq - c)
+            r90  = max(0, c * TARGET_UTIL - f)
+            rows.append({
+                "Vehicle": v,
+                "Capacity": f"{c:,}",
+                "Can Load (equiv.)": f"{int(f):,}",
+                "Utilization": f"{u}%",
+                "Remains on Floor (equiv.)": f"{int(left):,}",
+                "More to reach 90% (equiv.)": f"{int(r90):,}" if r90 > 0 else "✅ Optimal",
+                "Trucks Needed": int(np.ceil(load_eq / c)) if c else 1,
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
