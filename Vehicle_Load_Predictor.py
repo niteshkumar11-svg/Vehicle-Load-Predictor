@@ -381,19 +381,22 @@ def main():
         .reset_index(drop=True)
     )
 
-    st.markdown('<div class="sec-hdr">Step 1 — Select Cutoff(s) &nbsp;·&nbsp; click rows to select, Shift+click for multi</div>', unsafe_allow_html=True)
-    cut_evt = st.dataframe(
-        cutoff_tbl,
-        on_select="rerun",
-        selection_mode="multi-row",
-        use_container_width=True,
-        hide_index=True,
-        height=min(420, (len(cutoff_tbl) + 1) * 35 + 10),
-    )
-    sel_cutoffs = [cutoff_tbl.iloc[i]["Cutoff"] for i in cut_evt.selection.rows]
+    with st.expander("🕐 Step 1 — Select Cutoff(s)", expanded=True):
+        st.caption("Click rows to select · Shift+click for multi-select")
+        cut_evt = st.dataframe(
+            cutoff_tbl,
+            on_select="rerun",
+            selection_mode="multi-row",
+            use_container_width=True,
+            hide_index=True,
+            height=min(420, (len(cutoff_tbl) + 1) * 35 + 10),
+        )
+        sel_cutoffs = [cutoff_tbl.iloc[i]["Cutoff"] for i in cut_evt.selection.rows]
+        if sel_cutoffs:
+            st.success(f"Selected: {', '.join(sel_cutoffs)}")
 
     if not sel_cutoffs:
-        st.info("👆 Select one or more cutoff rows to continue.")
+        st.info("👆 Expand Step 1 and select one or more cutoff rows to continue.")
         return
 
     # ── Step 2: DH table ──────────────────────────────────────────────────────
@@ -406,22 +409,22 @@ def main():
         .reset_index(drop=True)
     )
 
-    st.markdown(
-        f'<div class="sec-hdr" style="margin-top:18px">Step 2 — Select DH(s) &nbsp;·&nbsp; {len(dh_tbl)} DHs across cutoff(s) {", ".join(sel_cutoffs)}</div>',
-        unsafe_allow_html=True,
-    )
-    dh_evt = st.dataframe(
-        dh_tbl,
-        on_select="rerun",
-        selection_mode="multi-row",
-        use_container_width=True,
-        hide_index=True,
-        height=min(480, (len(dh_tbl) + 1) * 35 + 10),
-    )
-    sel_dh_rows = [dh_tbl.iloc[i] for i in dh_evt.selection.rows]
+    with st.expander(f"🏭 Step 2 — Select DH(s)  ·  {len(dh_tbl)} DHs across cutoff(s) {', '.join(sel_cutoffs)}", expanded=True):
+        st.caption("Click rows to select · Shift+click for multi-select")
+        dh_evt = st.dataframe(
+            dh_tbl,
+            on_select="rerun",
+            selection_mode="multi-row",
+            use_container_width=True,
+            hide_index=True,
+            height=min(480, (len(dh_tbl) + 1) * 35 + 10),
+        )
+        sel_dh_rows = [dh_tbl.iloc[i] for i in dh_evt.selection.rows]
+        if sel_dh_rows:
+            st.success(f"Selected {len(sel_dh_rows)} DH(s): {', '.join(r['DH Name'] for r in sel_dh_rows)}")
 
     if not sel_dh_rows:
-        st.info("👆 Select one or more DH rows to continue.")
+        st.info("👆 Expand Step 2 and select one or more DH rows to continue.")
         return
 
     # ── Aggregate load for selected DHs ───────────────────────────────────────
