@@ -381,7 +381,7 @@ def main():
         .reset_index(drop=True)
     )
 
-    with st.expander("🕐 Step 1 — Select Cutoff(s)", expanded=True):
+    with st.expander("🕐 Step 1 — Select Cutoff(s)", expanded=False):
         st.caption("Click rows to select · Shift+click for multi-select")
         cut_evt = st.dataframe(
             cutoff_tbl,
@@ -409,7 +409,7 @@ def main():
         .reset_index(drop=True)
     )
 
-    with st.expander(f"🏭 Step 2 — Select DH(s)  ·  {len(dh_tbl)} DHs across cutoff(s) {', '.join(sel_cutoffs)}", expanded=True):
+    with st.expander(f"🏭 Step 2 — Select DH(s)  ·  {len(dh_tbl)} DHs across cutoff(s) {', '.join(sel_cutoffs)}", expanded=False):
         st.caption("Click rows to select · Shift+click for multi-select")
         dh_evt = st.dataframe(
             dh_tbl,
