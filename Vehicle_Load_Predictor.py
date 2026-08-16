@@ -679,7 +679,7 @@ def main():
     # ── Load Mix Simulator ─────────────────────────────────────────────────────
     st.divider()
     st.markdown("### 🧪 Load Mix Simulator")
-    st.caption("Select which load types you want to dispatch. ML will predict the optimal vehicle and show what remains on floor.")
+    st.caption(f"Select which load types to dispatch. Vehicle **{sel_v}** (selected above) is used to calculate utilization.")
 
     lc1, lc2, lc3, lc4 = st.columns(4)
     with lc1:
@@ -727,7 +727,11 @@ def main():
     if mix_total_ship == 0:
         st.warning("⚠️ No load types selected. Select at least one type above.")
     else:
-        mix_v, mix_cap, mix_util, mix_trucks = recommend_vehicle(mix_frac, vcaps)
+        # Use the vehicle chosen in the Vehicle Simulator above
+        mix_v    = sel_v
+        mix_cap  = sel_cap
+        mix_util = mix_equiv / sel_cap if sel_cap else 0
+        mix_trucks = max(1, int(np.ceil(mix_util)))
         mix_util_pct = round(mix_util * 100, 1)
         mix_col      = "#16a34a" if mix_util_pct >= 75 else "#f59e0b" if mix_util_pct >= 40 else "#ef4444"
 
