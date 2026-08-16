@@ -367,6 +367,11 @@ def main():
 
     st.divider()
 
+    # ── Session state for auto-collapse ───────────────────────────────────────
+    for k, v in [("cut_locked", False), ("dh_locked", False)]:
+        if k not in st.session_state:
+            st.session_state[k] = v
+
     # ── Step 1: Cutoff table ───────────────────────────────────────────────────
     if df_dh.empty:
         st.warning("⚠️ DH Name Cut-Off sheet not found.")
@@ -381,7 +386,7 @@ def main():
         .reset_index(drop=True)
     )
 
-    with st.expander("🕐 Step 1 — Select Cutoff(s)", expanded=False):
+    with st.expander("🕐 Step 1 — Select Cutoff(s)", expanded=not st.session_state.cut_locked):
         st.caption("Click rows to select · Shift+click for multi-select")
         cut_evt = st.dataframe(
             cutoff_tbl,
@@ -393,7 +398,15 @@ def main():
         )
         sel_cutoffs = [cutoff_tbl.iloc[i]["Cutoff"] for i in cut_evt.selection.rows]
         if sel_cutoffs:
-            st.success(f"Selected: {', '.join(sel_cutoffs)}")
+            st.success(f"✅ Selected: {', '.join(sel_cutoffs)}")
+            if not st.session_state.cut_locked:
+                st.session_state.cut_locked = True
+                st.rerun()
+        else:
+            if st.session_state.cut_locked:
+                st.session_state.cut_locked = False
+                st.session_state.dh_locked = False
+                st.rerun()
 
     if not sel_cutoffs:
         st.info("👆 Expand Step 1 and select one or more cutoff rows to continue.")
@@ -409,7 +422,11 @@ def main():
         .reset_index(drop=True)
     )
 
-    with st.expander(f"🏭 Step 2 — Select DH(s)  ·  {len(dh_tbl)} DHs across cutoff(s) {', '.join(sel_cutoffs)}", expanded=bool(sel_cutoffs)):
+    sel_dh_rows = []
+    with st.expander(
+        f"🏭 Step 2 — Select DH(s)  ·  {len(dh_tbl)} DHs across cutoff(s) {', '.join(sel_cutoffs)}",
+        expanded=st.session_state.cut_locked and not st.session_state.dh_locked,
+    ):
         st.caption("Click rows to select · Shift+click for multi-select")
         dh_evt = st.dataframe(
             dh_tbl,
@@ -421,7 +438,14 @@ def main():
         )
         sel_dh_rows = [dh_tbl.iloc[i] for i in dh_evt.selection.rows]
         if sel_dh_rows:
-            st.success(f"Selected {len(sel_dh_rows)} DH(s): {', '.join(r['DH Name'] for r in sel_dh_rows)}")
+            st.success(f"✅ Selected {len(sel_dh_rows)} DH(s): {', '.join(r['DH Name'] for r in sel_dh_rows)}")
+            if not st.session_state.dh_locked:
+                st.session_state.dh_locked = True
+                st.rerun()
+        else:
+            if st.session_state.dh_locked:
+                st.session_state.dh_locked = False
+                st.rerun()
 
     if not sel_dh_rows:
         st.info("👆 Expand Step 2 and select one or more DH rows to continue.")
@@ -533,46 +557,67 @@ def main():
                 else:
                     st.success(f"✅ Vehicle is at ≥90% utilization — optimal load!")
 
-    # ── Manual Vehicle Selector ────────────────────────────────────────────────
+    # ── Vehicle Selector (ML pre-selects recommended, user can override) ──────
     st.divider()
-    st.markdown("### 🔧 Manual Vehicle Selector")
-    st.caption("Choose any vehicle to see how much it can carry and what will remain on floor.")
+    st.markdown("### 🔧 Vehicle Load Simulator")
+    st.caption("ML pre-selects the recommended vehicle. Override to explore any size.")
 
     vnames = [v for v, _ in vcaps]
-    sel_v  = st.selectbox("Select Vehicle Size", vnames,
-                           index=next((i for i,(v,_) in enumerate(vcaps) if v==best_v), 0)
-                           if best_v and best_v in vnames else 0)
+    sel_v  = st.selectbox(
+        "Select Vehicle Size",
+        vnames,
+        index=next((i for i, (v, _) in enumerate(vcaps) if v == best_v), 0)
+        if best_v and best_v in vnames else 0,
+    )
 
-    sel_cap = next(c for v, c in vcaps if v == sel_v)
-    sel_frac = sel_cap / max_cap               # fraction of 32 Ft
-    load_eq  = req_equiv                        # equivalent shipments needed
+    sel_cap      = next(c for v, c in vcaps if v == sel_v)
+    load_eq      = req_equiv   # equivalent shipments needed (for 90% calc)
 
-    # What fits in this vehicle
-    can_fit_eq  = min(load_eq, sel_cap)         # equiv shipments that fit
-    cant_fit_eq = max(0, load_eq - sel_cap)     # equiv that won't fit
+    # ── Actual load vs vehicle capacity ───────────────────────────────────────
+    # Convert per-type actual counts to fractions of vehicle capacity
+    bag_cap_v  = sel_cap / max_cap * BAG_SHIPMENTS_32FT   # bag shipments this vehicle can carry
+    semi_cap_v = sel_cap / max_cap * SEMI_32FT
+    tote_cap_v = sel_cap / max_cap * TOTES_32FT
+    sec_cap_v  = sel_cap / max_cap * SECONDARY_32FT
 
-    can_fit_frac  = can_fit_eq  / max_cap
-    cant_fit_frac = cant_fit_eq / max_cap
+    # Actual loads from selected DHs
+    act_bag_ships = agg["bag_shipments"]
+    act_bag_count = agg["bag_count"]
+    act_semi      = agg["semi_count"]
+    act_totes     = agg["tote_count"]
+    act_sec       = agg["secondary_count"]
+
+    # If ALL load fits in vehicle → show actual counts, 0 remaining
+    # If partial → scale each type by the fit fraction
+    can_fit_eq  = min(load_eq, sel_cap)
+    cant_fit_eq = max(0.0, load_eq - sel_cap)
+    all_fit     = cant_fit_eq == 0
+
+    if all_fit:
+        can_bag_ships = act_bag_ships
+        can_bags      = act_bag_count
+        can_semi      = act_semi
+        can_totes     = act_totes
+        can_sec       = act_sec
+        rem_bag_ships = 0; rem_bags = 0; rem_semi = 0; rem_totes = 0; rem_sec = 0
+    else:
+        fit_ratio     = can_fit_eq / load_eq if load_eq else 0
+        can_bag_ships = int(act_bag_ships * fit_ratio)
+        can_bags      = int(act_bag_count * fit_ratio)
+        can_semi      = int(act_semi  * fit_ratio)
+        can_totes     = int(act_totes * fit_ratio)
+        can_sec       = int(act_sec   * fit_ratio)
+        rem_bag_ships = act_bag_ships - can_bag_ships
+        rem_bags      = act_bag_count - can_bags
+        rem_semi      = act_semi  - can_semi
+        rem_totes     = act_totes - can_totes
+        rem_sec       = act_sec   - can_sec
 
     util_sel = round(can_fit_eq / sel_cap * 100, 1) if sel_cap else 0
     util_col  = "#16a34a" if util_sel >= 80 else "#f59e0b" if util_sel >= 50 else "#ef4444"
 
     rem_to_90_eq = remaining_to_target(can_fit_eq, sel_cap, max_cap)
     rem_to_90_bd = breakdown_remaining(rem_to_90_eq, max_cap)
-
-    # What can be loaded (proportional breakdown)
-    can_bags_ships = int(can_fit_frac * BAG_SHIPMENTS_32FT)
-    can_bags       = can_bags_ships // SHIPMENTS_PER_BAG
-    can_semi       = int(can_fit_frac * SEMI_32FT)
-    can_totes      = int(can_fit_frac * TOTES_32FT)
-    can_sec        = int(can_fit_frac * SECONDARY_32FT)
-
-    # What stays on floor (proportional)
-    rem_bags_ships = int(cant_fit_frac * BAG_SHIPMENTS_32FT)
-    rem_bags       = rem_bags_ships // SHIPMENTS_PER_BAG
-    rem_semi       = int(cant_fit_frac * SEMI_32FT)
-    rem_totes      = int(cant_fit_frac * TOTES_32FT)
-    rem_sec        = int(cant_fit_frac * SECONDARY_32FT)
 
     r1, r2 = st.columns(2)
     with r1:
@@ -588,7 +633,7 @@ def main():
             f'<div class="bartrack"><div class="barfill" style="width:{util_sel}%;background:{util_col}"></div></div>'
             f'</div>'
             f'<div style="font-size:13px;color:#64748b;margin-top:10px">'
-            f'Loading <b>{int(can_fit_eq):,}</b> of <b>{int(load_eq):,}</b> equivalent shipments</div>'
+            f'Loading <b>{can_bag_ships + can_semi + can_totes + can_sec:,}</b> of <b>{total_ship:,}</b> total shipments</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -596,9 +641,9 @@ def main():
     with r2:
         st.markdown(
             f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
-            f'<div class="klabel" style="color:#16a34a">✅ Fits in {sel_v}</div>'
+            f'<div class="klabel" style="color:#16a34a">✅ Loads in {sel_v} — Actual Floor Data</div>'
             f'<div style="font-size:13px;margin:8px 0 12px">'
-            f'&nbsp;🛍️ <b>{can_bags:,}</b> bags &nbsp;({can_bags_ships:,} shipments)<br>'
+            f'&nbsp;🛍️ <b>{can_bags:,}</b> bags &nbsp;({can_bag_ships:,} shipments)<br>'
             f'&nbsp;📦 <b>{can_semi:,}</b> semi-large shipments<br>'
             f'&nbsp;🧺 <b>{can_totes:,}</b> totes<br>'
             f'&nbsp;📋 <b>{can_sec:,}</b> secondary shipments'
@@ -606,7 +651,7 @@ def main():
             f'<hr style="border:none;border-top:1px solid #f1f5f9;margin:0 0 10px">'
             f'<div class="klabel" style="color:#ef4444">⏳ Remains on Floor</div>'
             f'<div style="font-size:13px;margin:8px 0">'
-            f'&nbsp;🛍️ <b>{rem_bags:,}</b> bags &nbsp;({rem_bags_ships:,} shipments)<br>'
+            f'&nbsp;🛍️ <b>{rem_bags:,}</b> bags &nbsp;({rem_bag_ships:,} shipments)<br>'
             f'📦 <b>{rem_semi:,}</b> semi-large &nbsp;|&nbsp; '
             f'🧺 <b>{rem_totes:,}</b> totes &nbsp;|&nbsp; '
             f'📋 <b>{rem_sec:,}</b> secondary'
