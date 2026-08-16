@@ -530,40 +530,6 @@ def main():
                 else:
                     st.success(f"✅ Vehicle is at ≥90% utilization — optimal load!")
 
-    # ── Capacity bars ──────────────────────────────────────────────────────────
-    st.divider()
-    st.markdown("### 📊 Capacity Utilization &nbsp;*(per type, relative to 32 Ft truck)*")
-    pbar("🛍️ Bags",        agg["bag_count"],          BAG_SHIPMENTS_32FT // SHIPMENTS_PER_BAG, "bags",      "#f59e0b")
-    pbar("📦 Semi-Large",  agg["semi_count"],          SEMI_32FT,                               "shipments", "#3b82f6")
-    pbar("🧺 Totes",       agg["tote_count"],          TOTES_32FT,                              "totes",     "#8b5cf6")
-    pbar("📋 Secondary",   agg["secondary_count"],     SECONDARY_32FT,                          "shipments", "#ef4444")
-
-    # Gauge
-    overall_pct = round(min(total_frac, 1.0) * 100, 1)
-    _, gc2, _ = st.columns([1, 1.4, 1])
-    with gc2:
-        fig_g = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=overall_pct,
-            number={"suffix":"%","font":{"size":36,"color":"#1e293b"}},
-            title={"text":"Overall 32 Ft Equivalent Utilization","font":{"size":13}},
-            gauge={
-                "axis":{"range":[0,100],"ticksuffix":"%"},
-                "bar":{"color":"#2563eb","thickness":0.26},
-                "steps":[
-                    {"range":[0,60],"color":"#dbeafe"},
-                    {"range":[60,85],"color":"#bfdbfe"},
-                    {"range":[85,100],"color":"#bbf7d0"},
-                ],
-                "threshold":{"line":{"color":"#f59e0b","width":3},"thickness":0.75,"value":90},
-            },
-        ))
-        fig_g.update_layout(height=280, margin=dict(t=30,b=0,l=20,r=20))
-        st.plotly_chart(fig_g, use_container_width=True)
-
-    if total_frac > 1:
-        st.warning(f"⚠️ Load exceeds 1 truck — minimum **{int(np.ceil(total_frac))} vehicles** required.")
-
     # ── Manual Vehicle Selector ────────────────────────────────────────────────
     st.divider()
     st.markdown("### 🔧 Manual Vehicle Selector")
@@ -659,6 +625,40 @@ def main():
             f"</div>",
             unsafe_allow_html=True,
         )
+
+    # ── Capacity bars ──────────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 📊 Capacity Utilization &nbsp;*(per type, relative to 32 Ft truck)*")
+    pbar("🛍️ Bags",        agg["bag_count"],          BAG_SHIPMENTS_32FT // SHIPMENTS_PER_BAG, "bags",      "#f59e0b")
+    pbar("📦 Semi-Large",  agg["semi_count"],          SEMI_32FT,                               "shipments", "#3b82f6")
+    pbar("🧺 Totes",       agg["tote_count"],          TOTES_32FT,                              "totes",     "#8b5cf6")
+    pbar("📋 Secondary",   agg["secondary_count"],     SECONDARY_32FT,                          "shipments", "#ef4444")
+
+    # Gauge
+    overall_pct = round(min(total_frac, 1.0) * 100, 1)
+    _, gc2, _ = st.columns([1, 1.4, 1])
+    with gc2:
+        fig_g = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=overall_pct,
+            number={"suffix":"%","font":{"size":36,"color":"#1e293b"}},
+            title={"text":"Overall 32 Ft Equivalent Utilization","font":{"size":13}},
+            gauge={
+                "axis":{"range":[0,100],"ticksuffix":"%"},
+                "bar":{"color":"#2563eb","thickness":0.26},
+                "steps":[
+                    {"range":[0,60],"color":"#dbeafe"},
+                    {"range":[60,85],"color":"#bfdbfe"},
+                    {"range":[85,100],"color":"#bbf7d0"},
+                ],
+                "threshold":{"line":{"color":"#f59e0b","width":3},"thickness":0.75,"value":90},
+            },
+        ))
+        fig_g.update_layout(height=280, margin=dict(t=30,b=0,l=20,r=20))
+        st.plotly_chart(fig_g, use_container_width=True)
+
+    if total_frac > 1:
+        st.warning(f"⚠️ Load exceeds 1 truck — minimum **{int(np.ceil(total_frac))} vehicles** required.")
 
     # ── All vehicles comparison table ──────────────────────────────────────────
     with st.expander("📋 All Vehicles — Comparison Table", expanded=False):
