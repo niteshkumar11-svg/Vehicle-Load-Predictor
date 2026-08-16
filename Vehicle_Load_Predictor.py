@@ -746,40 +746,65 @@ def main():
             mix_util_bar = min(mix_util_pct, 100)
             mix_rem_eq   = remaining_to_target(mix_equiv, mix_cap if isinstance(mix_cap, int) else max_cap, max_cap)
             mix_rem_bd   = breakdown_remaining(mix_rem_eq, max_cap)
-            target_mix   = int((mix_cap if isinstance(mix_cap, int) else max_cap) * TARGET_UTIL)
+
+            # Build load lines (avoid backslash-in-fstring for Python <3.12)
+            mix_bag_ships_fmt = f"{mix['bag_shipments']:,}"
+            d1_lines = ""
+            if inc_bag:
+                d1_lines += f"🛍️ <b>{mix['bag_count']}</b> bags ({mix_bag_ships_fmt} shipments)<br>"
+            if inc_semi:
+                d1_lines += f"📦 <b>{mix['semi_count']}</b> semi-large shipments<br>"
+            if inc_tote:
+                d1_lines += f"🧺 <b>{mix['tote_count']}</b> totes<br>"
+            if inc_sec:
+                d1_lines += f"📋 <b>{mix['secondary_count']}</b> secondary shipments<br>"
+
+            rem_hint_color = "#64748b"
+            if mix_rem_eq > 0:
+                rem_hint = (
+                    f'<div style="font-size:12px;color:{rem_hint_color};margin-top:8px">'
+                    f'📈 {int(mix_rem_eq)} more equivalent shipments to reach 90%'
+                    f' (= {mix_rem_bd["bags"]} bags | {mix_rem_bd["semi"]} semi'
+                    f' | {mix_rem_bd["totes"]} totes)</div>'
+                )
+            else:
+                rem_hint = '<div style="font-size:12px;color:#16a34a;margin-top:8px">✅ Optimal — ≥90% utilized</div>'
 
             st.markdown(
                 f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
                 f'<div class="klabel">🚛 {mix_v} — Selected Mix Detail</div>'
-                f'<div style="font-size:13px;margin:10px 0 6px">'
-                f'{"🛍️ <b>"+str(mix["bag_count"])+f"</b> bags ({mix[\"bag_shipments\"]:,} shipments)<br>" if inc_bag else ""}'
-                f'{"📦 <b>"+str(mix["semi_count"])+f"</b> semi-large shipments<br>" if inc_semi else ""}'
-                f'{"🧺 <b>"+str(mix["tote_count"])+f"</b> totes<br>" if inc_tote else ""}'
-                f'{"📋 <b>"+str(mix["secondary_count"])+f"</b> secondary shipments<br>" if inc_sec else ""}'
-                f'</div>'
+                f'<div style="font-size:13px;margin:10px 0 6px">{d1_lines}</div>'
                 f'<div class="klabel" style="margin-top:10px">Utilization</div>'
                 f'<div style="font-size:28px;font-weight:900;color:{mix_col}">{mix_util_pct}%</div>'
                 f'<div class="bartrack" style="margin-top:6px">'
                 f'<div class="barfill" style="width:{mix_util_bar}%;background:{mix_col}"></div></div>'
-                f'{"<div style=\\"font-size:12px;color:#64748b;margin-top:8px\\">📈 "+str(int(mix_rem_eq))+f" more equivalent shipments to reach 90% (= {mix_rem_bd[\"bags\"]} bags | {mix_rem_bd[\"semi\"]} semi | {mix_rem_bd[\"totes\"]} totes)</div>" if mix_rem_eq > 0 else "<div style=\\"font-size:12px;color:#16a34a;margin-top:8px\\">✅ Optimal — ≥90% utilized</div>"}'
+                f'{rem_hint}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
         with d2:
+            floor_color = "#ef4444" if floor_total > 0 else "#16a34a"
+            floor_bag_ships_fmt = f"{floor_bag_ships:,}"
+            d2_lines = ""
+            if floor_bags > 0 or not inc_bag:
+                d2_lines += f"🛍️ <b>{floor_bags}</b> bags ({floor_bag_ships_fmt} shipments)<br>"
+            if floor_semi > 0 or not inc_semi:
+                d2_lines += f"📦 <b>{floor_semi}</b> semi-large shipments<br>"
+            if floor_totes > 0 or not inc_tote:
+                d2_lines += f"🧺 <b>{floor_totes}</b> totes<br>"
+            if floor_sec > 0 or not inc_sec:
+                d2_lines += f"📋 <b>{floor_sec}</b> secondary shipments<br>"
+            if floor_total == 0:
+                d2_lines = "✅ <b>All selected types dispatched — nothing remains on floor</b>"
+
             st.markdown(
                 f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
                 f'<div class="klabel" style="color:#ef4444">⏳ Remains on Floor (not dispatched)</div>'
-                f'<div style="font-size:13px;margin:10px 0">'
-                f'{"🛍️ <b>"+str(floor_bags)+f"</b> bags ({floor_bag_ships:,} shipments)<br>" if floor_bags > 0 or not inc_bag else ""}'
-                f'{"📦 <b>"+str(floor_semi)+f"</b> semi-large shipments<br>" if floor_semi > 0 or not inc_semi else ""}'
-                f'{"🧺 <b>"+str(floor_totes)+f"</b> totes<br>" if floor_totes > 0 or not inc_tote else ""}'
-                f'{"📋 <b>"+str(floor_sec)+f"</b> secondary shipments<br>" if floor_sec > 0 or not inc_sec else ""}'
-                f'{"✅ <b>All selected types dispatched — nothing remains on floor</b>" if floor_total == 0 else ""}'
-                f'</div>'
+                f'<div style="font-size:13px;margin:10px 0">{d2_lines}</div>'
                 f'<hr style="border:none;border-top:1px solid #f1f5f9;margin:10px 0">'
                 f'<div class="klabel">Total Remaining</div>'
-                f'<div style="font-size:28px;font-weight:900;color:{"#ef4444" if floor_total>0 else "#16a34a"}">'
+                f'<div style="font-size:28px;font-weight:900;color:{floor_color}">'
                 f'{floor_total:,} <span style="font-size:14px;color:#64748b">shipments</span></div>'
                 f'</div>',
                 unsafe_allow_html=True,
