@@ -501,8 +501,8 @@ def main():
                 f'<div style="font-size:26px;font-weight:800;color:{conf_col}">{util_pct}%</div></div>'
                 f'<div><div style="font-size:12px;opacity:.75">Trucks Needed</div>'
                 f'<div style="font-size:26px;font-weight:800">{n_trucks}</div></div>'
-                f'<div><div style="font-size:12px;opacity:.75">Equiv. Shipments</div>'
-                f'<div style="font-size:26px;font-weight:800">{int(req_equiv):,}</div></div>'
+                f'<div><div style="font-size:12px;opacity:.75">Total Shipments</div>'
+                f'<div style="font-size:26px;font-weight:800">{total_ship:,}</div></div>'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
