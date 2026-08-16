@@ -484,78 +484,58 @@ def main():
                 f"Total equivalent shipments: <b style='font-size:22px;color:#1e293b'>{total_ship:,}</b></div>",
                 unsafe_allow_html=True)
 
-    # ── Pie + Vehicle recommendation ──────────────────────────────────────────
+    # ── Vehicle recommendation (full width) ───────────────────────────────────
     st.divider()
-    col_pie, col_rec = st.columns([1, 1])
-
     total_frac = load_to_frac(agg)
     req_equiv  = frac_to_equiv(total_frac, max_cap)
+    best_v, best_cap, best_util, n_trucks = recommend_vehicle(total_frac, vcaps)
 
-    with col_pie:
-        labels = ["Bag Shipments", "Semi-Large", "Totes", "Secondary Pending"]
-        vals   = [agg["bag_shipments"], agg["semi_count"], agg["tote_count"], agg["secondary_count"]]
-        colors = ["#f59e0b","#3b82f6","#8b5cf6","#ef4444"]
-        nz = [(l,v,c) for l,v,c in zip(labels,vals,colors) if v>0]
-        fig = go.Figure(go.Pie(
-            labels=[x[0] for x in nz], values=[x[1] for x in nz],
-            marker_colors=[x[2] for x in nz], hole=0.55,
-            textinfo="label+percent", textfont_size=12,
-        ))
-        fig.update_layout(
-            showlegend=False, height=300,
-            margin=dict(t=10,b=10,l=10,r=10),
-            annotations=[dict(text=f"<b>{total_ship:,}</b><br>Total",
-                              x=0.5,y=0.5,font_size=14,showarrow=False)],
+    if best_v is None:
+        st.warning("No load to predict.")
+        return
+
+    util_pct = round(best_util * 100, 1)
+    conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
+
+    # Full-width stat row
+    rv1, rv2, rv3, rv4 = st.columns([2, 1, 1, 1])
+    with rv1:
+        st.markdown(
+            f'<div class="predcard" style="height:100%">'
+            f'<div style="font-size:13px;opacity:.8;font-weight:500">🎯 ML Recommended Vehicle</div>'
+            f'<div style="font-size:52px;font-weight:900;margin:4px 0;letter-spacing:-2px">{best_v}</div>'
+            f'<div style="font-size:12px;opacity:.7;margin-top:4px">Optimal dispatch vehicle based on floor load</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
-        st.markdown("**Load Bifurcation**")
-        st.plotly_chart(fig, use_container_width=True)
+    with rv2:
+        kcard("Load Utilization", f"{util_pct}%", "of vehicle capacity", conf_col)
+    with rv3:
+        kcard("Trucks Needed", f"{n_trucks}", "for full floor load", "#2563eb")
+    with rv4:
+        kcard("Total Shipments", f"{total_ship:,}", "bags + semi + totes + secondary", "#475569")
 
-    with col_rec:
-        best_v, best_cap, best_util, n_trucks = recommend_vehicle(total_frac, vcaps)
-
-        if best_v is None:
-            st.warning("No load to predict.")
-        else:
-            util_pct  = round(best_util * 100, 1)
-            conf_col  = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
-
+    # 90% info
+    if n_trucks == 1 and isinstance(best_cap, int):
+        rem_eq    = remaining_to_target(req_equiv, best_cap, max_cap)
+        rem_bd    = breakdown_remaining(rem_eq, max_cap)
+        target_eq = int(best_cap * TARGET_UTIL)
+        st.markdown("<br>", unsafe_allow_html=True)
+        if rem_eq > 0:
             st.markdown(
-                f'<div class="predcard">'
-                f'<div style="font-size:13px;opacity:.8;font-weight:500">🎯 Recommended Vehicle</div>'
-                f'<div style="font-size:44px;font-weight:900;margin:6px 0 4px;letter-spacing:-1px">{best_v}</div>'
-                f'<div style="display:flex;gap:24px;margin-top:10px">'
-                f'<div><div style="font-size:12px;opacity:.75">Load Utilization</div>'
-                f'<div style="font-size:26px;font-weight:800;color:{conf_col}">{util_pct}%</div></div>'
-                f'<div><div style="font-size:12px;opacity:.75">Trucks Needed</div>'
-                f'<div style="font-size:26px;font-weight:800">{n_trucks}</div></div>'
-                f'<div><div style="font-size:12px;opacity:.75">Total Shipments</div>'
-                f'<div style="font-size:26px;font-weight:800">{total_ship:,}</div></div>'
-                f'</div></div>',
+                f"<div style='background:#fefce8;border:1px solid #fde047;border-radius:10px;"
+                f"padding:12px 16px;font-size:13px'>"
+                f"<b>📈 To reach 90% utilization ({target_eq:,} shipments):</b>&nbsp; "
+                f"Can accommodate <b>{int(rem_eq):,}</b> more — e.g. "
+                f"<b>{rem_bd['bags']:,}</b> bags &nbsp;|&nbsp; "
+                f"<b>{rem_bd['semi']:,}</b> semi-large &nbsp;|&nbsp; "
+                f"<b>{rem_bd['totes']:,}</b> totes &nbsp;|&nbsp; "
+                f"<b>{rem_bd['secondary']:,}</b> secondary"
+                f"</div>",
                 unsafe_allow_html=True,
             )
-
-            # Remaining to reach 90 %
-            if n_trucks == 1 and isinstance(best_cap, int):
-                rem_eq = remaining_to_target(req_equiv, best_cap, max_cap)
-                rem_bd = breakdown_remaining(rem_eq, max_cap)
-                target_eq = int(best_cap * TARGET_UTIL)
-
-                st.markdown("<br>", unsafe_allow_html=True)
-                if rem_eq > 0:
-                    st.markdown(
-                        f"<div style='background:#fefce8;border:1px solid #fde047;border-radius:10px;"
-                        f"padding:12px 16px;font-size:13px'>"
-                        f"<b>📈 To reach 90% utilization ({target_eq:,} shipments):</b><br>"
-                        f"Can accommodate <b>{int(rem_eq):,}</b> more equivalent shipments, e.g.:<br>"
-                        f"&nbsp;&nbsp;• <b>{rem_bd['bags']:,}</b> more bags &nbsp;|&nbsp; "
-                        f"<b>{rem_bd['semi']:,}</b> more semi-large &nbsp;|&nbsp; "
-                        f"<b>{rem_bd['totes']:,}</b> more totes &nbsp;|&nbsp; "
-                        f"<b>{rem_bd['secondary']:,}</b> secondary"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.success(f"✅ Vehicle is at ≥90% utilization — optimal load!")
+        else:
+            st.success("✅ Vehicle is at ≥90% utilization — optimal load!")
 
     # ── Vehicle Selector (ML pre-selects recommended, user can override) ──────
     st.divider()
@@ -695,6 +675,128 @@ def main():
                 "Trucks Needed": int(np.ceil(load_eq / c)) if c else 1,
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── Load Mix Simulator ─────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 🧪 Load Mix Simulator")
+    st.caption("Select which load types you want to dispatch. ML will predict the optimal vehicle and show what remains on floor.")
+
+    lc1, lc2, lc3, lc4 = st.columns(4)
+    with lc1:
+        inc_bag = st.checkbox(
+            f"🛍️ Bags  ({agg['bag_count']:,} bags · {agg['bag_shipments']:,} shipments)",
+            value=True,
+        )
+    with lc2:
+        inc_semi = st.checkbox(
+            f"📦 Semi-Large  ({agg['semi_count']:,} shipments)",
+            value=True,
+        )
+    with lc3:
+        inc_tote = st.checkbox(
+            f"🧺 Totes  ({agg['tote_count']:,} totes)",
+            value=True,
+        )
+    with lc4:
+        inc_sec = st.checkbox(
+            f"📋 Secondary  ({agg['secondary_count']:,} shipments)",
+            value=True,
+        )
+
+    # Compute mix load
+    mix = dict(
+        bag_shipments   = agg["bag_shipments"]    if inc_bag  else 0,
+        bag_count       = agg["bag_count"]         if inc_bag  else 0,
+        semi_count      = agg["semi_count"]        if inc_semi else 0,
+        tote_count      = agg["tote_count"]        if inc_tote else 0,
+        secondary_count = agg["secondary_count"]   if inc_sec  else 0,
+    )
+
+    mix_total_ship = mix["bag_shipments"] + mix["semi_count"] + mix["tote_count"] + mix["secondary_count"]
+    mix_frac       = load_to_frac(mix)
+    mix_equiv      = frac_to_equiv(mix_frac, max_cap)
+
+    # Remaining on floor (types NOT included or types that don't fit)
+    floor_bag_ships = agg["bag_shipments"]    - mix["bag_shipments"]
+    floor_bags      = agg["bag_count"]         - mix["bag_count"]
+    floor_semi      = agg["semi_count"]        - mix["semi_count"]
+    floor_totes     = agg["tote_count"]        - mix["tote_count"]
+    floor_sec       = agg["secondary_count"]   - mix["secondary_count"]
+    floor_total     = floor_bag_ships + floor_semi + floor_totes + floor_sec
+
+    if mix_total_ship == 0:
+        st.warning("⚠️ No load types selected. Select at least one type above.")
+    else:
+        mix_v, mix_cap, mix_util, mix_trucks = recommend_vehicle(mix_frac, vcaps)
+        mix_util_pct = round(mix_util * 100, 1)
+        mix_col      = "#16a34a" if mix_util_pct >= 75 else "#f59e0b" if mix_util_pct >= 40 else "#ef4444"
+
+        # Summary cards
+        sm1, sm2, sm3, sm4 = st.columns(4)
+        with sm1: kcard("🚛 Predicted Vehicle",    str(mix_v),              "for selected mix", "#2563eb")
+        with sm2: kcard("📊 Load Utilization",     f"{mix_util_pct}%",      "of vehicle capacity", mix_col)
+        with sm3: kcard("📦 Loading",              f"{mix_total_ship:,}",   "shipments in this mix", "#16a34a")
+        with sm4: kcard("⏳ Remains on Floor",     f"{floor_total:,}",      "shipments not dispatched", "#ef4444")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Detail columns
+        d1, d2 = st.columns(2)
+        with d1:
+            mix_util_bar = min(mix_util_pct, 100)
+            mix_rem_eq   = remaining_to_target(mix_equiv, mix_cap if isinstance(mix_cap, int) else max_cap, max_cap)
+            mix_rem_bd   = breakdown_remaining(mix_rem_eq, max_cap)
+            target_mix   = int((mix_cap if isinstance(mix_cap, int) else max_cap) * TARGET_UTIL)
+
+            st.markdown(
+                f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
+                f'<div class="klabel">🚛 {mix_v} — Selected Mix Detail</div>'
+                f'<div style="font-size:13px;margin:10px 0 6px">'
+                f'{"🛍️ <b>"+str(mix["bag_count"])+f"</b> bags ({mix[\"bag_shipments\"]:,} shipments)<br>" if inc_bag else ""}'
+                f'{"📦 <b>"+str(mix["semi_count"])+f"</b> semi-large shipments<br>" if inc_semi else ""}'
+                f'{"🧺 <b>"+str(mix["tote_count"])+f"</b> totes<br>" if inc_tote else ""}'
+                f'{"📋 <b>"+str(mix["secondary_count"])+f"</b> secondary shipments<br>" if inc_sec else ""}'
+                f'</div>'
+                f'<div class="klabel" style="margin-top:10px">Utilization</div>'
+                f'<div style="font-size:28px;font-weight:900;color:{mix_col}">{mix_util_pct}%</div>'
+                f'<div class="bartrack" style="margin-top:6px">'
+                f'<div class="barfill" style="width:{mix_util_bar}%;background:{mix_col}"></div></div>'
+                f'{"<div style=\\"font-size:12px;color:#64748b;margin-top:8px\\">📈 "+str(int(mix_rem_eq))+f" more equivalent shipments to reach 90% (= {mix_rem_bd[\"bags\"]} bags | {mix_rem_bd[\"semi\"]} semi | {mix_rem_bd[\"totes\"]} totes)</div>" if mix_rem_eq > 0 else "<div style=\\"font-size:12px;color:#16a34a;margin-top:8px\\">✅ Optimal — ≥90% utilized</div>"}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        with d2:
+            st.markdown(
+                f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
+                f'<div class="klabel" style="color:#ef4444">⏳ Remains on Floor (not dispatched)</div>'
+                f'<div style="font-size:13px;margin:10px 0">'
+                f'{"🛍️ <b>"+str(floor_bags)+f"</b> bags ({floor_bag_ships:,} shipments)<br>" if floor_bags > 0 or not inc_bag else ""}'
+                f'{"📦 <b>"+str(floor_semi)+f"</b> semi-large shipments<br>" if floor_semi > 0 or not inc_semi else ""}'
+                f'{"🧺 <b>"+str(floor_totes)+f"</b> totes<br>" if floor_totes > 0 or not inc_tote else ""}'
+                f'{"📋 <b>"+str(floor_sec)+f"</b> secondary shipments<br>" if floor_sec > 0 or not inc_sec else ""}'
+                f'{"✅ <b>All selected types dispatched — nothing remains on floor</b>" if floor_total == 0 else ""}'
+                f'</div>'
+                f'<hr style="border:none;border-top:1px solid #f1f5f9;margin:10px 0">'
+                f'<div class="klabel">Total Remaining</div>'
+                f'<div style="font-size:28px;font-weight:900;color:{"#ef4444" if floor_total>0 else "#16a34a"}">'
+                f'{floor_total:,} <span style="font-size:14px;color:#64748b">shipments</span></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Comparison vs full load
+        if mix_total_ship < total_ship:
+            st.markdown(
+                f"<div style='background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;"
+                f"padding:12px 16px;font-size:13px;margin-top:8px'>"
+                f"<b>📊 vs Full Load:</b> &nbsp; "
+                f"Dispatching <b>{mix_total_ship:,}</b> of <b>{total_ship:,}</b> shipments "
+                f"(<b>{round(mix_total_ship/total_ship*100,1)}%</b> of floor load). &nbsp;"
+                f"Full load needs: <b>{best_v}</b> at <b>{util_pct}%</b> utilization."
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
 
 if __name__ == "__main__":
