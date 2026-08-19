@@ -246,6 +246,16 @@ def dh_load(dh_name, nexthop, df_bag, df_semi, df_tote, df_sec):
         secondary_count = len(secr),
     )
 
+@st.cache_data(ttl=300, show_spinner=False)
+def compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh):
+    """Pre-compute loads for every DH once and cache for 5 min."""
+    result = {}
+    for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
+        dh_n = str(dr["dh_name"])
+        nx   = str(dr.get("nexthop", "")) if "nexthop" in dr.index else ""
+        result[dh_n] = dh_load(dh_n, nx, df_bag, df_semi, df_tote, df_sec)
+    return result
+
 
 # ── Vehicle logic ──────────────────────────────────────────────────────────────
 def load_to_frac(load):
@@ -357,6 +367,10 @@ def main():
 
     max_cap = max(c for _, c in vcaps)
 
+    # Pre-compute all DH loads once (cached 5 min) so the per-cutoff table is instant
+    with st.spinner("Computing DH loads…"):
+        all_dh_loads = compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh)
+
     # ── Overview cards ─────────────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
     with c1: kcard("🛍️ Total Bags on Floor",    f"{len(df_bag):,}",
@@ -407,35 +421,34 @@ def main():
     dh_rows      = []
     dh_loads_map = {}          # dh_name → raw ld dict (for fast re-aggregation)
 
-    with st.spinner("Building DH breakdown…"):
-        for _, dr in filt_dh.drop_duplicates("dh_name").iterrows():
-            dh_n = str(dr["dh_name"])
-            nx   = str(dr.get("nexthop", "")) if "nexthop" in dr.index else ""
-            ld   = dh_load(dh_n, nx, df_bag, df_semi, df_tote, df_sec)
-            dh_loads_map[dh_n] = ld
+    for _, dr in filt_dh.drop_duplicates("dh_name").iterrows():
+        dh_n = str(dr["dh_name"])
+        ld   = all_dh_loads.get(dh_n, dict(bag_count=0, bag_shipments=0,
+                                           semi_count=0, tote_count=0, secondary_count=0))
+        dh_loads_map[dh_n] = ld
 
-            sec_bags        = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
-            total_bags      = ld["bag_count"] + sec_bags
-            total_bag_ships = ld["bag_shipments"] + ld["secondary_count"]
-            total_ship_row  = total_bag_ships + ld["semi_count"] + ld["tote_count"]
+        sec_bags        = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
+        total_bags      = ld["bag_count"] + sec_bags
+        total_bag_ships = ld["bag_shipments"] + ld["secondary_count"]
+        total_ship_row  = total_bag_ships + ld["semi_count"] + ld["tote_count"]
 
-            merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
-                             tote_count=ld["tote_count"], secondary_count=0)
-            frac   = load_to_frac(merged_ld)
-            rec_v, rec_cap, rec_util, _ = recommend_vehicle(frac, vcaps)
+        merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
+                         tote_count=ld["tote_count"], secondary_count=0)
+        frac   = load_to_frac(merged_ld)
+        rec_v, rec_cap, rec_util, _ = recommend_vehicle(frac, vcaps)
 
-            dh_rows.append({
-                "Cut Off":             dr["cutoff_display"],
-                "DH Code":             str(dr.get("dh_code", "")),
-                "DH Name":             dh_n,
-                "Bag":                 total_bags,
-                "Semi Large":          ld["semi_count"],
-                "Totes":               ld["tote_count"],
-                "Total Shipment":      total_ship_row,
-                "Max Vehicle Size":    rec_cap if rec_cap else 0,
-                "Recommended Vehicle": rec_v   if rec_v   else "—",
-                "Utilization %":       round(rec_util * 100, 1) if rec_v else 0.0,
-            })
+        dh_rows.append({
+            "Cut Off":             dr["cutoff_display"],
+            "DH Code":             str(dr.get("dh_code", "")),
+            "DH Name":             dh_n,
+            "Bag":                 total_bags,
+            "Semi Large":          ld["semi_count"],
+            "Totes":               ld["tote_count"],
+            "Total Shipment":      total_ship_row,
+            "Max Vehicle Size":    rec_cap if rec_cap else 0,
+            "Recommended Vehicle": rec_v   if rec_v   else "—",
+            "Utilization %":       round(rec_util * 100, 1) if rec_v else 0.0,
+        })
 
     dh_summary = (
         pd.DataFrame(dh_rows)
