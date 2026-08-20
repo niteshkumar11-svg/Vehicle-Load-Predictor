@@ -427,13 +427,33 @@ def main():
     with st.spinner("Computing DH loads…"):
         all_dh_loads = compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh)
 
-    # ── Overview cards ─────────────────────────────────────────────────────────
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: kcard("🛍️ Total Bags on Floor",    f"{len(df_bag):,}",
-                    f"{df_bag['ship_count'].sum() if not df_bag.empty else 0:,} shipments", "#f59e0b")
-    with c2: kcard("📦 Semi-Large Shipments",    f"{len(df_semi):,}", "Floor pending", "#3b82f6")
-    with c3: kcard("🧺 Totes on Floor",          f"{len(df_tote):,}", "Pending dispatch", "#8b5cf6")
-    with c4: kcard("📋 Secondary Pending",        f"{len(df_sec):,}",  "Sorted, not bagged", "#ef4444")
+    # ── Overview — single combined box (same theme as prediction card) ───────────
+    bag_ships = df_bag['ship_count'].sum() if not df_bag.empty else 0
+    st.markdown(
+        f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
+        f'  <div style="text-align:center">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
+        f'  </div>'
+        f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
+        f'  </div>'
+        f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
+        f'  </div>'
+        f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary Pending</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
+        f'  </div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     st.divider()
 
