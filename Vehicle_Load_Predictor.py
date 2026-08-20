@@ -221,6 +221,7 @@ def parse(_key):
 
 # ── Load for a DH ──────────────────────────────────────────────────────────────
 def _match(df, dh_name, nexthop=""):
+    """Slow path (row-by-row fuzzy scan) — kept for single-DH lookups only."""
     if df.empty:
         return df
     targets = {_norm(dh_name)}
@@ -246,14 +247,69 @@ def dh_load(dh_name, nexthop, df_bag, df_semi, df_tote, df_sec):
         secondary_count = len(secr),
     )
 
+def _agg_by_dest(df, value_col=None):
+    """Aggregate a destination-keyed df ONCE into {norm_dest: (row_count, value_sum)}."""
+    if df.empty:
+        return {}, []
+    norms = df["destination"].apply(_norm)
+    if value_col:
+        g = df.assign(_n=norms).groupby("_n")[value_col].agg(["size", "sum"])
+        agg = {n: (int(r["size"]), int(r["sum"])) for n, r in g.iterrows()}
+    else:
+        g = norms.value_counts()
+        agg = {n: (int(c), 0) for n, c in g.items()}
+    return agg, list(agg.keys())
+
+def _match_agg(dh_name, nexthop, agg, unique_norms):
+    """O(unique destinations) lookup instead of O(rows) — exact first, fuzzy fallback."""
+    if not agg:
+        return 0, 0
+    targets = {_norm(dh_name)}
+    if nexthop and nexthop.lower() not in ("direct", "null", "nan", ""):
+        targets.add(_norm(nexthop))
+
+    exact_hits = [t for t in targets if t in agg]
+    if exact_hits:
+        cnt = sum(agg[t][0] for t in exact_hits)
+        val = sum(agg[t][1] for t in exact_hits)
+        return cnt, val
+
+    cnt = val = 0
+    for n in unique_norms:
+        if max(_fuzzy(n, t) for t in targets) >= 0.72:
+            c, v = agg[n]
+            cnt += c
+            val += v
+    return cnt, val
+
 @st.cache_data(ttl=300, show_spinner=False)
 def compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh):
-    """Pre-compute loads for every DH once and cache for 5 min."""
+    """Pre-compute loads for every DH once and cache for 5 min.
+    Aggregates each source sheet by unique destination ONCE, then does
+    O(unique destinations) lookups per DH instead of O(rows) — this is what
+    makes 1000+ DHs load instantly instead of taking minutes."""
+    bag_agg, bag_norms   = _agg_by_dest(df_bag,  "ship_count")
+    semi_agg, semi_norms = _agg_by_dest(df_semi)
+    tote_agg, tote_norms = _agg_by_dest(df_tote)
+    sec_agg,  sec_norms  = _agg_by_dest(df_sec)
+
     result = {}
     for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
         dh_n = str(dr["dh_name"])
         nx   = str(dr.get("nexthop", "")) if "nexthop" in dr.index else ""
-        result[dh_n] = dh_load(dh_n, nx, df_bag, df_semi, df_tote, df_sec)
+
+        bag_count, bag_ships = _match_agg(dh_n, nx, bag_agg,  bag_norms)
+        semi_count, _        = _match_agg(dh_n, nx, semi_agg, semi_norms)
+        tote_count, _        = _match_agg(dh_n, nx, tote_agg, tote_norms)
+        sec_count, _         = _match_agg(dh_n, nx, sec_agg,  sec_norms)
+
+        result[dh_n] = dict(
+            bag_count       = bag_count,
+            bag_shipments   = bag_ships,
+            semi_count      = semi_count,
+            tote_count      = tote_count,
+            secondary_count = sec_count,
+        )
     return result
 
 
