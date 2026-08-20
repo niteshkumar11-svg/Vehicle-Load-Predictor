@@ -531,6 +531,18 @@ def main():
         use_container_width=True,
         hide_index=True,
         height=min(520, (len(dh_summary) + 1) * 35 + 10),
+        column_config={
+            "Cut Off":             st.column_config.TextColumn(alignment="center"),
+            "DH Code":             st.column_config.TextColumn(alignment="center"),
+            "DH Name":             st.column_config.TextColumn(alignment="center"),
+            "Bag":                 st.column_config.NumberColumn(alignment="center", format="%d"),
+            "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
+            "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
+            "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
+            "Max Vehicle Size":    st.column_config.NumberColumn(alignment="center", format="%d"),
+            "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
+            "Utilization %":       st.column_config.NumberColumn(alignment="center", format="%.1f%%"),
+        },
     )
 
     sel_idx = dh_evt.selection.rows
@@ -572,22 +584,33 @@ def main():
     util_pct = round(best_util * 100, 1)
     conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
-    # ── Fill combined prediction box ABOVE the cutoff table ───────────────────────
+    # ── Fill combined prediction box ABOVE the cutoff table (single full-width box) ──
     with pred_placeholder.container():
         names_preview = ", ".join(sel_names[:4]) + ("…" if len(sel_names) > 4 else "")
-        rv1, rv2, rv3, rv4 = st.columns([2, 1, 1, 1])
-        with rv1:
-            st.markdown(
-                f'<div class="predcard" style="height:100%">'
-                f'<div style="font-size:13px;opacity:.8;font-weight:500">🎯 Combined Prediction — {len(sel_names)} DH(s)</div>'
-                f'<div style="font-size:52px;font-weight:900;margin:4px 0;letter-spacing:-2px">{best_v}</div>'
-                f'<div style="font-size:12px;opacity:.7;margin-top:4px">{names_preview}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        with rv2: kcard("Load Utilization", f"{util_pct}%", "of vehicle capacity", conf_col)
-        with rv3: kcard("Trucks Needed", f"{n_trucks}", "for full floor load", "#2563eb")
-        with rv4: kcard("Total Shipments", f"{total_ship:,}", "bags + semi + totes", "#475569")
+        st.markdown(
+            f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
+            f'<div>'
+            f'<div style="font-size:13px;opacity:.8;font-weight:500">🎯 Combined Prediction — {len(sel_names)} DH(s)</div>'
+            f'<div style="font-size:52px;font-weight:900;margin:4px 0;letter-spacing:-2px">{best_v}</div>'
+            f'<div style="font-size:12px;opacity:.7;margin-top:4px">{names_preview}</div>'
+            f'</div>'
+            f'<div style="display:flex;gap:32px;flex-shrink:0">'
+            f'  <div style="text-align:center">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
+            f'    <div style="font-size:30px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
+            f'  </div>'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:32px">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Trucks Needed</div>'
+            f'    <div style="font-size:30px;font-weight:900">{n_trucks}</div>'
+            f'  </div>'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:32px">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Total Shipments</div>'
+            f'    <div style="font-size:30px;font-weight:900">{total_ship:,}</div>'
+            f'  </div>'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
     st.divider()
 
     # ── Vehicle Selector (ML pre-selects recommended, user can override) ──────
