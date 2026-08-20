@@ -613,6 +613,25 @@ def main():
         )
     st.divider()
 
+    # ── All vehicles comparison table ──────────────────────────────────────────
+    st.markdown("### 📋 All Vehicles — Comparison Table")
+    rows = []
+    for v, c in vcaps:
+        f    = min(req_equiv, c)
+        u    = round(f / c * 100, 1) if c else 0
+        left = max(0, req_equiv - c)
+        r90  = max(0, c * TARGET_UTIL - f)
+        rows.append({
+            "Vehicle": v,
+            "Capacity": f"{c:,}",
+            "Can Load (equiv.)": f"{int(f):,}",
+            "Utilization": f"{u}%",
+            "Remains on Floor (equiv.)": f"{int(left):,}",
+            "More to reach 100% (equiv.)": f"{int(r90):,}" if r90 > 0 else "✅ Optimal",
+            "Trucks Needed": int(np.ceil(req_equiv / c)) if c else 1,
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
     # ── Vehicle Selector (ML pre-selects recommended, user can override) ──────
     st.divider()
     st.markdown("### 🔧 Vehicle Load Simulator")
@@ -732,25 +751,6 @@ def main():
 
     if total_frac > 1:
         st.warning(f"⚠️ Load exceeds 1 truck — minimum **{int(np.ceil(total_frac))} vehicles** required.")
-
-    # ── All vehicles comparison table ──────────────────────────────────────────
-    with st.expander("📋 All Vehicles — Comparison Table", expanded=False):
-        rows = []
-        for v, c in vcaps:
-            f    = min(load_eq, c)
-            u    = round(f / c * 100, 1) if c else 0
-            left = max(0, load_eq - c)
-            r90  = max(0, c * TARGET_UTIL - f)
-            rows.append({
-                "Vehicle": v,
-                "Capacity": f"{c:,}",
-                "Can Load (equiv.)": f"{int(f):,}",
-                "Utilization": f"{u}%",
-                "Remains on Floor (equiv.)": f"{int(left):,}",
-                "More to reach 100% (equiv.)": f"{int(r90):,}" if r90 > 0 else "✅ Optimal",
-                "Trucks Needed": int(np.ceil(load_eq / c)) if c else 1,
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     # ── Load Mix Simulator ─────────────────────────────────────────────────────
     st.divider()
