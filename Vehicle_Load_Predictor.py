@@ -1,7 +1,7 @@
 """
 Vehicle Load Prediction Dashboard  —  Flipkart · Hajipur Mother Hub
 • Multi-select cutoff + DH tables
-• Smart vehicle recommendation targeting ~90 % utilisation
+• Smart vehicle recommendation targeting 100 % utilisation
 • Manual vehicle selector with remaining-capacity breakdown
 """
 
@@ -49,7 +49,7 @@ DEFAULT_VEHICLE_CAPS = [
     ("32 Ft", 14_235),
 ]
 
-TARGET_UTIL = 0.90   # target utilisation
+TARGET_UTIL = 1.00   # target utilisation
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -627,7 +627,7 @@ def main():
     )
 
     sel_cap      = next(c for v, c in vcaps if v == sel_v)
-    load_eq      = req_equiv   # equivalent shipments needed (for 90% calc)
+    load_eq      = req_equiv   # equivalent shipments needed (for target-util calc)
 
     # ── Actual load vs vehicle capacity ───────────────────────────────────────
     # Convert per-type actual counts to fractions of vehicle capacity
@@ -716,12 +716,12 @@ def main():
             unsafe_allow_html=True,
         )
 
-    # Remaining to 90 % for selected vehicle
+    # Remaining to 100 % for selected vehicle
     if rem_to_90_eq > 0:
         st.markdown(
             f"<div style='background:#fefce8;border:1px solid #fde047;border-radius:10px;"
             f"padding:12px 16px;font-size:13px;margin-top:8px'>"
-            f"<b>📈 To reach 90% in {sel_v} ({int(sel_cap*TARGET_UTIL):,} shipments):</b>&nbsp; "
+            f"<b>📈 To reach 100% in {sel_v} ({int(sel_cap*TARGET_UTIL):,} shipments):</b>&nbsp; "
             f"Can load <b>{int(rem_to_90_eq):,}</b> more equivalent shipments — e.g. "
             f"<b>{rem_to_90_bd['bags']:,}</b> bags &nbsp;|&nbsp; "
             f"<b>{rem_to_90_bd['semi']:,}</b> semi-large &nbsp;|&nbsp; "
@@ -747,7 +747,7 @@ def main():
                 "Can Load (equiv.)": f"{int(f):,}",
                 "Utilization": f"{u}%",
                 "Remains on Floor (equiv.)": f"{int(left):,}",
-                "More to reach 90% (equiv.)": f"{int(r90):,}" if r90 > 0 else "✅ Optimal",
+                "More to reach 100% (equiv.)": f"{int(r90):,}" if r90 > 0 else "✅ Optimal",
                 "Trucks Needed": int(np.ceil(load_eq / c)) if c else 1,
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
@@ -843,12 +843,12 @@ def main():
             if mix_rem_eq > 0:
                 rem_hint = (
                     f'<div style="font-size:12px;color:{rem_hint_color};margin-top:8px">'
-                    f'📈 {int(mix_rem_eq)} more equivalent shipments to reach 90%'
+                    f'📈 {int(mix_rem_eq)} more equivalent shipments to reach 100%'
                     f' (= {mix_rem_bd["bags"]} bags | {mix_rem_bd["semi"]} semi'
                     f' | {mix_rem_bd["totes"]} totes)</div>'
                 )
             else:
-                rem_hint = '<div style="font-size:12px;color:#16a34a;margin-top:8px">✅ Optimal — ≥90% utilized</div>'
+                rem_hint = '<div style="font-size:12px;color:#16a34a;margin-top:8px">✅ Optimal — 100% utilized</div>'
 
             st.markdown(
                 f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
