@@ -506,14 +506,23 @@ def main():
             "Utilization %":       round(rec_util * 100, 1) if rec_v else 0.0,
         })
 
-    dh_summary = (
-        pd.DataFrame(dh_rows)
-        .sort_values(["Cut Off", "DH Name"])
-        .reset_index(drop=True)
-    )
+    dh_summary = pd.DataFrame(dh_rows)
+    if not dh_summary.empty:
+        dh_summary = (
+            dh_summary[dh_summary["Total Shipment"] > 0]
+            .sort_values(["Cut Off", "DH Name"])
+            .reset_index(drop=True)
+        )
 
     st.divider()
-    st.markdown(f"### 🏭 DH Load Breakdown — {len(dh_summary)} DH(s) across {', '.join(sel_cutoffs)}")
+    st.markdown(f"### 🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load across {', '.join(sel_cutoffs)}")
+
+    if dh_summary.empty:
+        with pred_placeholder.container():
+            st.success("✅ No pending floor load for any DH in the selected cutoff(s).")
+        st.info("No DHs with pending shipments for the selected cutoff(s).")
+        return
+
     st.caption("Click rows to select DHs for combined prediction (appears above ↑) · Shift+click for multi-select")
     dh_evt = st.dataframe(
         dh_summary,
