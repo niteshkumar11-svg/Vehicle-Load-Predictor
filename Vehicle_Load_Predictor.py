@@ -701,6 +701,7 @@ def main():
                 unsafe_allow_html=True,
             )
             # DH names as wrapping chips BELOW the box (outside, one after another)
+            st.markdown(f"#### Selected DHs ({len(sel_names)})")
             chips = "".join(
                 f'<span style="display:inline-block;background:#eef2ff;color:#3730a3;'
                 f'border-radius:6px;padding:3px 10px;margin:4px 4px 0 0;font-size:12px;font-weight:600">{n}</span>'
