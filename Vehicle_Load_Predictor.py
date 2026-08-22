@@ -316,27 +316,37 @@ def frac_to_equiv(frac, max_cap):
 def recommend_vehicle(total_frac, vcaps):
     """
     Pick the smallest vehicle that fits the load (= highest utilisation).
-    Returns (vehicle_name, capacity, utilisation_frac, trucks_needed).
+    Returns (vehicle_name, capacity, utilisation_frac, trucks_needed, truck_breakdown).
+    truck_breakdown is a list of {"vehicle", "capacity", "util_frac"} — one entry
+    per truck — so multi-truck loads can show utilisation separately per vehicle
+    instead of one blended number.
     """
     max_cap  = max(c for _, c in vcaps)
     req_cap  = total_frac * max_cap
 
     if total_frac == 0:
-        return None, 0, 0.0, 0
+        return None, 0, 0.0, 0, []
 
     if total_frac > 1:
         n = int(np.ceil(total_frac))
-        # last partial truck
-        rem_frac = total_frac - (n - 1)
-        rem_cap  = rem_frac * max_cap
-        last_v   = next((v for v, c in vcaps if c >= rem_cap), vcaps[-1][0])
-        return f"32 Ft × {n-1} + {last_v}", max_cap, rem_frac, n
+        # last partial truck — utilisation must be relative to ITS OWN capacity,
+        # not the 32 Ft capacity used to size the full trucks before it.
+        rem_frac       = total_frac - (n - 1)
+        rem_cap        = rem_frac * max_cap
+        last_v, last_c = next(((v, c) for v, c in vcaps if c >= rem_cap), vcaps[-1])
+        last_util      = rem_cap / last_c if last_c else 0.0
+        breakdown = [{"vehicle": "32 Ft", "capacity": max_cap, "util_frac": 1.0} for _ in range(n - 1)]
+        breakdown.append({"vehicle": last_v, "capacity": last_c, "util_frac": last_util})
+        return f"32 Ft × {n-1} + {last_v}", max_cap, last_util, n, breakdown
 
     for v, c in vcaps:
         if c >= req_cap:
-            return v, c, req_cap / c, 1
+            util = req_cap / c if c else 0.0
+            return v, c, util, 1, [{"vehicle": v, "capacity": c, "util_frac": util}]
 
-    return vcaps[-1][0], vcaps[-1][1], req_cap / vcaps[-1][1], 1
+    v, c = vcaps[-1]
+    util = req_cap / c if c else 0.0
+    return v, c, util, 1, [{"vehicle": v, "capacity": c, "util_frac": util}]
 
 def remaining_to_target(current_equiv, vehicle_cap, max_cap, target=TARGET_UTIL):
     """How many more equivalent shipments to reach target utilisation."""
@@ -534,7 +544,7 @@ def main():
                 merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
                                  tote_count=ld["tote_count"], secondary_count=0)
                 frac = load_to_frac(merged_ld)
-                rec_v, rec_cap, rec_util, _ = recommend_vehicle(frac, vcaps)
+                rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(frac, vcaps)
 
                 dh_rows.append({
                     "Cut Off":             dr["cutoff_display"],
@@ -606,7 +616,7 @@ def main():
     best_v = best_cap = best_util = n_trucks = None
 
     if total_ship:
-        best_v, best_cap, best_util, n_trucks = recommend_vehicle(total_frac, vcaps)
+        best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, vcaps)
 
     # ── Fill the All Vehicles comparison table (left column) ───────────────────
     veh_rows = []
@@ -633,41 +643,70 @@ def main():
     if best_v is not None:
         util_pct = round(best_util * 100, 1)
         conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
-        names_preview = ", ".join(sel_names[:4]) + ("…" if len(sel_names) > 4 else "")
-        main_box.markdown(
-            f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
-            # ── LEFT: load bifurcation for the confirmed selection ──
-            f'<div style="flex:1;min-width:0">'
-            f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
-            f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
-            f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
-            f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
-            f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
-            f'  </div>'
-            f'  <div style="font-size:11px;opacity:.6;margin-top:8px">{names_preview}</div>'
-            f'</div>'
-            # ── RIGHT: vehicle prediction ──
-            f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
-            f'  <div>'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
-            f'    <div style="font-size:42px;font-weight:900;margin:2px 0;letter-spacing:-1px">{best_v}</div>'
-            f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
-            f'    <div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
-            f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Trucks Needed</div>'
-            f'    <div style="font-size:28px;font-weight:900">{n_trucks}</div>'
-            f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Total Shipments</div>'
-            f'    <div style="font-size:28px;font-weight:900">{total_ship:,}</div>'
-            f'  </div>'
-            f'</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+
+        # Utilization block: one blended number for a single vehicle, or a
+        # separate line per vehicle when the load spans multiple trucks.
+        if len(truck_breakdown) > 1:
+            util_lines = ""
+            for tb in truck_breakdown:
+                tb_pct = round(tb["util_frac"] * 100, 1)
+                tb_col = "#4ade80" if tb_pct >= 75 else "#fbbf24" if tb_pct >= 40 else "#f87171"
+                util_lines += (
+                    f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
+                    f'{tb["vehicle"]}: {tb_pct}%</div>'
+                )
+            util_block = (
+                f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Utilization / Vehicle</div>'
+                f'{util_lines}'
+                f'</div>'
+            )
+        else:
+            util_block = (
+                f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
+                f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
+                f'</div>'
+            )
+
+        with main_box.container():
+            st.markdown(
+                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
+                # ── LEFT: load bifurcation for the confirmed selection ──
+                f'<div style="flex:1;min-width:0">'
+                f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
+                f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
+                f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
+                f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
+                f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
+                f'  </div>'
+                f'</div>'
+                # ── RIGHT: vehicle prediction ──
+                f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
+                f'  <div>'
+                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
+                f'    <div style="font-size:42px;font-weight:900;margin:2px 0;letter-spacing:-1px">{best_v}</div>'
+                f'  </div>'
+                f'{util_block}'
+                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Trucks Needed</div>'
+                f'    <div style="font-size:28px;font-weight:900">{n_trucks}</div>'
+                f'  </div>'
+                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Total Shipments</div>'
+                f'    <div style="font-size:28px;font-weight:900">{total_ship:,}</div>'
+                f'  </div>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            # DH names as wrapping chips BELOW the box (outside, one after another)
+            chips = "".join(
+                f'<span style="display:inline-block;background:#eef2ff;color:#3730a3;'
+                f'border-radius:6px;padding:3px 10px;margin:4px 4px 0 0;font-size:12px;font-weight:600">{n}</span>'
+                for n in sel_names
+            )
+            st.markdown(f'<div style="line-height:2.2">{chips}</div>', unsafe_allow_html=True)
     elif sel_names:
         with main_box.container():
             st.success(f"✅ No pending floor load for {len(sel_names)} selected DH(s).")
