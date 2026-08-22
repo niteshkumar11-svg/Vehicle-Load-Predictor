@@ -471,6 +471,12 @@ def main():
     )
     cutoff_tbl["Total Shipment"] = cutoff_tbl["Cutoff"].map(cutoff_ship_totals).fillna(0).astype(int)
 
+    # Table heights — DH table (right) is sized to match the combined height of
+    # the cutoff table + all-vehicles table stacked in the left column.
+    cutoff_h   = min(240, (len(cutoff_tbl) + 1) * 35 + 10)
+    vehicles_h = min(300, (len(vcaps) + 1) * 35 + 10)
+    dh_h       = cutoff_h + vehicles_h + 38
+
     # ── 2-column layout: Cutoff + All-Vehicles table (left) · DH table (right) ──
     col_left, col_right = st.columns([1, 1.6])
 
@@ -483,7 +489,7 @@ def main():
                 selection_mode="multi-row",
                 use_container_width=True,
                 hide_index=True,
-                height=min(240, (len(cutoff_tbl) + 1) * 35 + 10),
+                height=cutoff_h,
                 column_config={
                     "Cutoff":         st.column_config.TextColumn(alignment="center"),
                     "# DHs":          st.column_config.NumberColumn(alignment="center", format="%d"),
@@ -563,7 +569,7 @@ def main():
                         selection_mode="multi-row",
                         use_container_width=True,
                         hide_index=True,
-                        height=min(300, (len(dh_summary) + 1) * 35 + 10),
+                        height=dh_h,
                         column_config={
                             "Cut Off":             st.column_config.TextColumn(alignment="center"),
                             "DH Code":             st.column_config.TextColumn(alignment="center"),
@@ -620,7 +626,7 @@ def main():
         })
     vehicles_placeholder.dataframe(
         pd.DataFrame(veh_rows), use_container_width=True, hide_index=True,
-        height=min(300, (len(veh_rows) + 1) * 35 + 10),
+        height=vehicles_h,
     )
 
     # ── Fill the combined box with the prediction, once a DH selection is confirmed ──
@@ -630,23 +636,33 @@ def main():
         names_preview = ", ".join(sel_names[:4]) + ("…" if len(sel_names) > 4 else "")
         main_box.markdown(
             f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
-            f'<div>'
-            f'<div style="font-size:13px;opacity:.8;font-weight:500">🎯 Combined Prediction — {len(sel_names)} DH(s)</div>'
-            f'<div style="font-size:52px;font-weight:900;margin:4px 0;letter-spacing:-2px">{best_v}</div>'
-            f'<div style="font-size:12px;opacity:.7;margin-top:4px">{names_preview}</div>'
+            # ── LEFT: load bifurcation for the confirmed selection ──
+            f'<div style="flex:1;min-width:0">'
+            f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
+            f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
+            f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
+            f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
+            f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
+            f'  </div>'
+            f'  <div style="font-size:11px;opacity:.6;margin-top:8px">{names_preview}</div>'
             f'</div>'
-            f'<div style="display:flex;gap:32px;flex-shrink:0">'
-            f'  <div style="text-align:center">'
+            # ── RIGHT: vehicle prediction ──
+            f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
+            f'  <div>'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
+            f'    <div style="font-size:42px;font-weight:900;margin:2px 0;letter-spacing:-1px">{best_v}</div>'
+            f'  </div>'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
             f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
-            f'    <div style="font-size:30px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
+            f'    <div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
             f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:32px">'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
             f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Trucks Needed</div>'
-            f'    <div style="font-size:30px;font-weight:900">{n_trucks}</div>'
+            f'    <div style="font-size:28px;font-weight:900">{n_trucks}</div>'
             f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:32px">'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
             f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Total Shipments</div>'
-            f'    <div style="font-size:30px;font-weight:900">{total_ship:,}</div>'
+            f'    <div style="font-size:28px;font-weight:900">{total_ship:,}</div>'
             f'  </div>'
             f'</div>'
             f'</div>',
