@@ -177,6 +177,22 @@ def parse(_key):
             df_sec["destination"] = df_sec["destination"].astype(str).str.strip()
             df_sec = df_sec[df_sec["destination"].notna() & (df_sec["destination"] != "nan")]
 
+    # Bagging Pending — same treatment as Secondary Pending: each row is one
+    # shipment waiting to be bagged, folded into bag counts at 30/bag. Its
+    # destination column is "shipment_facility_name" (not the *_id column).
+    bagging_v = _find(sheets, "bagging")
+    if bagging_v:
+        d = _df(bagging_v)
+        nc = next(
+            (c for c in d.columns if "facility" in c.lower() and "name" in c.lower() and "id" not in c.lower()),
+            None,
+        )
+        if nc:
+            df_bagging = d[[nc]].rename(columns={nc:"destination"})
+            df_bagging["destination"] = df_bagging["destination"].astype(str).str.strip()
+            df_bagging = df_bagging[df_bagging["destination"].notna() & (df_bagging["destination"] != "nan")]
+            df_sec = pd.concat([df_sec, df_bagging], ignore_index=True) if not df_sec.empty else df_bagging
+
     cap_v = _find(sheets, "load capacity", "capacity")
     vcaps = list(DEFAULT_VEHICLE_CAPS)
     if cap_v:
@@ -522,7 +538,7 @@ def main():
             f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
             f'  </div>'
             f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary Pending</div>'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
             f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
             f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
             f'  </div>'
@@ -961,7 +977,7 @@ def main():
         )
     with lc4:
         inc_sec = st.checkbox(
-            f"📋 Secondary  ({agg['secondary_count']:,} shipments)",
+            f"📋 Secondary + Bagging  ({agg['secondary_count']:,} shipments)",
             value=True,
         )
 
