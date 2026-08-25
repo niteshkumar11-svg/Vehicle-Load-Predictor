@@ -732,7 +732,6 @@ def main():
         veh_rows.append({
             "Vehicle": v,
             "Capacity": f"{c:,}",
-            "Can Load": f"{int(round(f * ship_per_equiv)):,}",
             "Utilization": u,
             "Status": _status_dot(u),
             "Remains on Floor": f"{int(round(left * ship_per_equiv)):,}",
@@ -747,7 +746,6 @@ def main():
         column_config={
             "Vehicle":              st.column_config.TextColumn(alignment="center"),
             "Capacity":             st.column_config.TextColumn(alignment="center"),
-            "Can Load":             st.column_config.TextColumn(alignment="center"),
             "Utilization":          st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
             "Status":               st.column_config.TextColumn(alignment="center", width="small"),
             "Remains on Floor":     st.column_config.TextColumn(alignment="center"),
