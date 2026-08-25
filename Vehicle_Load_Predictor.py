@@ -572,7 +572,7 @@ def main():
     # the cutoff table + all-vehicles table stacked in the left column.
     cutoff_h   = min(320, (len(cutoff_tbl) + 1) * 35 + 10)
     vehicles_h = min(380, (len(vcaps) + 1) * 35 + 10)
-    dh_h       = cutoff_h + vehicles_h + 38
+    dh_h       = cutoff_h + vehicles_h + 300
 
     # ── 2-column layout: Cutoff + All-Vehicles table (left) · DH table (right) ──
     col_left, col_right = st.columns([1, 1.6])
@@ -762,24 +762,16 @@ def main():
         conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
         # Utilization block: one blended number for a single vehicle, or one
-        # line per DISTINCT vehicle type when the load spans multiple trucks
-        # (same vehicle type repeated is grouped into "32 Ft × 2", not
-        # listed twice).
+        # line PER TRUCK when the load spans multiple trucks — each truck's
+        # own utilization shown individually, even if the vehicle type repeats.
         if len(truck_breakdown) > 1:
-            groups = {}
-            for tb in truck_breakdown:
-                groups.setdefault(tb["vehicle"], []).append(round(tb["util_frac"] * 100, 1))
-
             util_lines = ""
-            for vname, pcts in groups.items():
-                lo, hi   = min(pcts), max(pcts)
-                avg      = sum(pcts) / len(pcts)
-                tb_col   = "#4ade80" if avg >= 75 else "#fbbf24" if avg >= 40 else "#f87171"
-                label    = f"{vname} × {len(pcts)}" if len(pcts) > 1 else vname
-                pct_disp = f"{lo}%" if lo == hi else f"{lo}%–{hi}%"
+            for i, tb in enumerate(truck_breakdown, start=1):
+                pct    = round(tb["util_frac"] * 100, 1)
+                tb_col = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
                 util_lines += (
                     f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
-                    f'{label}: {pct_disp}</div>'
+                    f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
                 )
             util_block = (
                 f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
