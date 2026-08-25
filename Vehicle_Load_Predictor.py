@@ -61,11 +61,11 @@ st.markdown("""
 .stApp{background:#f0f2f6}
 section[data-testid="stSidebar"]{background:#1e293b!important}
 section[data-testid="stSidebar"] *{color:#f1f5f9!important}
-.kcard{background:white;border-radius:14px;padding:16px 20px;border:1px solid #e2e8f0;
-       box-shadow:0 2px 8px rgba(0,0,0,.05);border-left:4px solid var(--ac)}
-.klabel{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.6px}
-.kvalue{font-size:34px;font-weight:900;color:var(--ac);line-height:1.1;margin:2px 0}
-.ksub  {font-size:12px;color:#94a3b8;margin-top:2px}
+.kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
+       box-shadow:0 4px 14px rgba(0,0,0,.15)}
+.klabel{font-size:11px;color:rgba(255,255,255,.85);font-weight:700;text-transform:uppercase;letter-spacing:.6px}
+.kvalue{font-size:34px;font-weight:900;color:#ffffff;line-height:1.1;margin:2px 0}
+.ksub  {font-size:12px;color:rgba(255,255,255,.75);margin-top:2px}
 .predcard{background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:16px;
           padding:24px 26px;color:white;box-shadow:0 8px 28px rgba(37,99,235,.35)}
 .sec-hdr{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
@@ -74,6 +74,14 @@ section[data-testid="stSidebar"] *{color:#f1f5f9!important}
 .barfill{height:11px;border-radius:999px}
 .vcap-row{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;
           margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+
+/* Dashboard name pinned in the sticky app header — always visible, never scrolls away */
+header[data-testid="stHeader"]{height:52px}
+header[data-testid="stHeader"]::before{
+    content:"🚛  Vehicle Load Prediction Dashboard";
+    position:absolute; left:60px; top:50%; transform:translateY(-50%);
+    font-size:19px; font-weight:800; color:#1e293b; white-space:nowrap;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -364,6 +372,54 @@ def breakdown_remaining(equiv_remaining, max_cap):
     )
 
 
+# ── Table cell styling (pandas Styler — no extra deps needed) ────────────────
+def _status_dot(util_pct):
+    """🟢/🟡/🔴 status dot for a utilization percentage."""
+    if util_pct >= 75:
+        return "🟢"
+    if util_pct >= 40:
+        return "🟡"
+    return "🔴"
+
+def _util_badge_style(v):
+    if v >= 75:
+        return "background-color:#dcfce7;color:#166534;font-weight:700;border-radius:6px"
+    if v >= 40:
+        return "background-color:#fef9c3;color:#854d0e;font-weight:700;border-radius:6px"
+    return "background-color:#fee2e2;color:#991b1b;font-weight:700;border-radius:6px"
+
+_VEHICLE_BADGE_TIERS = {
+    "6.5 Ft": "background-color:#dbeafe;color:#1e40af;font-weight:700;border-radius:6px",
+    "8 Ft":   "background-color:#dbeafe;color:#1e40af;font-weight:700;border-radius:6px",
+    "10 Ft":  "background-color:#dbeafe;color:#1e40af;font-weight:700;border-radius:6px",
+    "14 Ft":  "background-color:#e0e7ff;color:#4338ca;font-weight:700;border-radius:6px",
+    "17 Ft":  "background-color:#e0e7ff;color:#4338ca;font-weight:700;border-radius:6px",
+    "20 Ft":  "background-color:#fef3c7;color:#92400e;font-weight:700;border-radius:6px",
+    "22 Ft":  "background-color:#fef3c7;color:#92400e;font-weight:700;border-radius:6px",
+    "24 Ft":  "background-color:#fef3c7;color:#92400e;font-weight:700;border-radius:6px",
+    "32 Ft":  "background-color:#fae8ff;color:#86198f;font-weight:700;border-radius:6px",
+}
+
+def _vehicle_badge_style(v):
+    v = str(v)
+    if v in _VEHICLE_BADGE_TIERS:
+        return _VEHICLE_BADGE_TIERS[v]
+    if v.startswith("32 Ft"):
+        return _VEHICLE_BADGE_TIERS["32 Ft"]
+    return "background-color:#f1f5f9;color:#334155;font-weight:700;border-radius:6px"
+
+def _shipment_heat_style(v, vmax):
+    """Light-to-strong orange scale for a shipment-count column."""
+    if vmax <= 0:
+        return ""
+    frac = min(1.0, v / vmax)
+    if frac >= 0.66:
+        return "background-color:#fed7aa;color:#7c2d12;font-weight:700"
+    if frac >= 0.33:
+        return "background-color:#ffedd5;color:#9a3412"
+    return "background-color:#fff7ed;color:#9a3412"
+
+
 def kcard(label, val, sub="", ac="#2563eb"):
     st.markdown(
         f'<div class="kcard" style="--ac:{ac}">'
@@ -400,9 +456,6 @@ def main():
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-
-    st.markdown("## 🚛 Vehicle Load Prediction Dashboard")
-    st.divider()
 
     with st.spinner("Loading data"):
         try:
@@ -490,11 +543,16 @@ def main():
     # ── 2-column layout: Cutoff + All-Vehicles table (left) · DH table (right) ──
     col_left, col_right = st.columns([1, 1.6])
 
+    cutoff_max_ship = int(cutoff_tbl["Total Shipment"].max()) if not cutoff_tbl.empty else 0
+    cutoff_styled = cutoff_tbl.style.map(
+        lambda v: _shipment_heat_style(v, cutoff_max_ship), subset=["Total Shipment"]
+    )
+
     with col_left:
         st.markdown("### 🕐 Select Cutoff(s)")
         with st.form("cutoff_form", border=False):
             cut_evt = st.dataframe(
-                cutoff_tbl,
+                cutoff_styled,
                 on_select="rerun",
                 selection_mode="multi-row",
                 use_container_width=True,
@@ -566,15 +624,19 @@ def main():
                     .sort_values(["Cut Off", "DH Name"])
                     .reset_index(drop=True)
                 )
+                dh_summary["Status"] = dh_summary["Utilization %"].apply(_status_dot)
 
             st.markdown(f"### 🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load")
 
             if dh_summary.empty:
                 st.success("✅ No pending floor load for any DH in the selected cutoff(s).")
             else:
+                dh_styled = dh_summary.style.map(
+                    _vehicle_badge_style, subset=["Recommended Vehicle"]
+                )
                 with st.form("dh_form", border=False):
                     dh_evt = st.dataframe(
-                        dh_summary,
+                        dh_styled,
                         on_select="rerun",
                         selection_mode="multi-row",
                         use_container_width=True,
@@ -590,7 +652,10 @@ def main():
                             "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
                             "Max Vehicle Size":    st.column_config.NumberColumn(alignment="center", format="%d"),
                             "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
-                            "Utilization %":       st.column_config.NumberColumn(alignment="center", format="%.1f%%"),
+                            "Utilization %":       st.column_config.ProgressColumn(
+                                format="%.1f%%", min_value=0, max_value=100,
+                            ),
+                            "Status":              st.column_config.TextColumn(alignment="center", width="small"),
                         },
                     )
                     submitted_dh = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
@@ -629,14 +694,22 @@ def main():
             "Vehicle": v,
             "Capacity": f"{c:,}",
             "Can Load (equiv.)": f"{int(f):,}",
-            "Utilization": f"{u}%",
+            "Utilization": u,
+            "Status": _status_dot(u),
             "Remains on Floor (equiv.)": f"{int(left):,}",
             "More to reach 100% (equiv.)": f"{int(r90):,}" if r90 > 0 else "✅ Optimal",
             "Trucks Needed": int(np.ceil(req_equiv / c)) if c and req_equiv else 0,
         })
+    veh_df = pd.DataFrame(veh_rows)
+    veh_styled = veh_df.style.map(_vehicle_badge_style, subset=["Vehicle"])
     vehicles_placeholder.dataframe(
-        pd.DataFrame(veh_rows), use_container_width=True, hide_index=True,
+        veh_styled, use_container_width=True, hide_index=True,
         height=vehicles_h,
+        column_config={
+            "Vehicle":     st.column_config.TextColumn(alignment="center"),
+            "Utilization": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+            "Status":      st.column_config.TextColumn(alignment="center", width="small"),
+        },
     )
 
     # ── Fill the combined box with the prediction, once a DH selection is confirmed ──
