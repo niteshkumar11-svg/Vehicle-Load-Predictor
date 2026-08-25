@@ -53,14 +53,15 @@ st.set_page_config(
     page_title="🚛 Vehicle Load Predictor | Hajipur MH",
     layout="wide",
     page_icon="🚛",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
 <style>
 .stApp{background:#f0f2f6}
-section[data-testid="stSidebar"]{background:#1e293b!important}
-section[data-testid="stSidebar"] *{color:#f1f5f9!important}
+/* Sidebar removed — header only */
+section[data-testid="stSidebar"]{display:none!important}
+div[data-testid="collapsedControl"]{display:none!important}
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
 /* Base .klabel/.kvalue/.ksub are reused on white-background detail boxes
@@ -475,18 +476,8 @@ def pbar(label, val, cap, unit, color):
 
 
 def main():
-    with st.sidebar:
-        st.markdown("## 🚛 Vehicle Predictor")
-        st.caption("MotherHub_HJR")
-        st.divider()
-        st.markdown("""
-**How to use**
-1. Select cutoff(s) on the left, click **Confirm**
-2. Select DH(s) on the right, click **Confirm**
-3. Combined prediction appears **above** in the top box
-4. Use **Vehicle Simulator** below to explore any size
-""")
-        st.divider()
+    hdr_l, hdr_r = st.columns([5, 1])
+    with hdr_r:
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
