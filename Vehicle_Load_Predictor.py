@@ -343,15 +343,19 @@ def recommend_vehicle(total_frac, vcaps):
 
     if total_frac > 1:
         n = int(np.ceil(total_frac))
+        max_v = next(v for v, c in vcaps if c == max_cap)
         # last partial truck — utilisation must be relative to ITS OWN capacity,
-        # not the 32 Ft capacity used to size the full trucks before it.
+        # not the max-cap capacity used to size the full trucks before it.
         rem_frac       = total_frac - (n - 1)
         rem_cap        = rem_frac * max_cap
         last_v, last_c = next(((v, c) for v, c in vcaps if c >= rem_cap), vcaps[-1])
         last_util      = rem_cap / last_c if last_c else 0.0
-        breakdown = [{"vehicle": "32 Ft", "capacity": max_cap, "util_frac": 1.0} for _ in range(n - 1)]
+        breakdown = [{"vehicle": max_v, "capacity": max_cap, "util_frac": 1.0} for _ in range(n - 1)]
         breakdown.append({"vehicle": last_v, "capacity": last_c, "util_frac": last_util})
-        return f"32 Ft × {n-1} + {last_v}", max_cap, last_util, n, breakdown
+        # Collapse the label when the last (partial) truck is the SAME type
+        # as the full trucks — e.g. "32 Ft × 2" instead of "32 Ft × 1 + 32 Ft".
+        label = f"{max_v} × {n}" if last_v == max_v else f"{max_v} × {n-1} + {last_v}"
+        return label, max_cap, last_util, n, breakdown
 
     for v, c in vcaps:
         if c >= req_cap:
@@ -550,8 +554,8 @@ def main():
 
     # Table heights — DH table (right) is sized to match the combined height of
     # the cutoff table + all-vehicles table stacked in the left column.
-    cutoff_h   = min(240, (len(cutoff_tbl) + 1) * 35 + 10)
-    vehicles_h = min(300, (len(vcaps) + 1) * 35 + 10)
+    cutoff_h   = min(320, (len(cutoff_tbl) + 1) * 35 + 10)
+    vehicles_h = min(380, (len(vcaps) + 1) * 35 + 10)
     dh_h       = cutoff_h + vehicles_h + 38
 
     # ── 2-column layout: Cutoff + All-Vehicles table (left) · DH table (right) ──
@@ -741,16 +745,25 @@ def main():
         util_pct = round(best_util * 100, 1)
         conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
-        # Utilization block: one blended number for a single vehicle, or a
-        # separate line per vehicle when the load spans multiple trucks.
+        # Utilization block: one blended number for a single vehicle, or one
+        # line per DISTINCT vehicle type when the load spans multiple trucks
+        # (same vehicle type repeated is grouped into "32 Ft × 2", not
+        # listed twice).
         if len(truck_breakdown) > 1:
-            util_lines = ""
+            groups = {}
             for tb in truck_breakdown:
-                tb_pct = round(tb["util_frac"] * 100, 1)
-                tb_col = "#4ade80" if tb_pct >= 75 else "#fbbf24" if tb_pct >= 40 else "#f87171"
+                groups.setdefault(tb["vehicle"], []).append(round(tb["util_frac"] * 100, 1))
+
+            util_lines = ""
+            for vname, pcts in groups.items():
+                lo, hi   = min(pcts), max(pcts)
+                avg      = sum(pcts) / len(pcts)
+                tb_col   = "#4ade80" if avg >= 75 else "#fbbf24" if avg >= 40 else "#f87171"
+                label    = f"{vname} × {len(pcts)}" if len(pcts) > 1 else vname
+                pct_disp = f"{lo}%" if lo == hi else f"{lo}%–{hi}%"
                 util_lines += (
                     f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
-                    f'{tb["vehicle"]}: {tb_pct}%</div>'
+                    f'{label}: {pct_disp}</div>'
                 )
             util_block = (
                 f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
