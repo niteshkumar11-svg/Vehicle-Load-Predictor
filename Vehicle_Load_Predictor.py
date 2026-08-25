@@ -959,11 +959,40 @@ def main():
     mix_frac       = load_to_frac(mix)
     mix_equiv      = frac_to_equiv(mix_frac, max_cap)
 
-    floor_bag_ships = agg["bag_shipments"]    - mix["bag_shipments"]
-    floor_bags      = agg["bag_count"]         - mix["bag_count"]
-    floor_semi      = agg["semi_count"]        - mix["semi_count"]
-    floor_totes     = agg["tote_count"]        - mix["tote_count"]
-    floor_sec       = agg["secondary_count"]   - mix["secondary_count"]
+    # What the selected vehicle can actually hold vs. what overflows —
+    # a single vehicle can never be loaded beyond its own capacity, so any
+    # excess must show up as pending-on-floor instead of >100% utilization.
+    mix_can_fit_eq  = min(mix_equiv, sel_cap)
+    mix_cant_fit_eq = max(0.0, mix_equiv - sel_cap)
+    mix_all_fit     = mix_cant_fit_eq == 0
+
+    if mix_all_fit:
+        mix_can_bag_ships = mix["bag_shipments"]
+        mix_can_bags      = mix["bag_count"]
+        mix_can_semi      = mix["semi_count"]
+        mix_can_totes     = mix["tote_count"]
+        mix_can_sec       = mix["secondary_count"]
+        overflow_bag_ships = overflow_bags = overflow_semi = overflow_totes = overflow_sec = 0
+    else:
+        fit_ratio = mix_can_fit_eq / mix_equiv if mix_equiv else 0
+        mix_can_bag_ships = int(mix["bag_shipments"] * fit_ratio)
+        mix_can_bags      = int(mix["bag_count"] * fit_ratio)
+        mix_can_semi      = int(mix["semi_count"] * fit_ratio)
+        mix_can_totes     = int(mix["tote_count"] * fit_ratio)
+        mix_can_sec       = int(mix["secondary_count"] * fit_ratio)
+        overflow_bag_ships = mix["bag_shipments"]    - mix_can_bag_ships
+        overflow_bags      = mix["bag_count"]         - mix_can_bags
+        overflow_semi      = mix["semi_count"]        - mix_can_semi
+        overflow_totes     = mix["tote_count"]        - mix_can_totes
+        overflow_sec       = mix["secondary_count"]   - mix_can_sec
+
+    mix_loading_ship = mix_can_bag_ships + mix_can_semi + mix_can_totes + mix_can_sec
+
+    floor_bag_ships = (agg["bag_shipments"]  - mix["bag_shipments"]) + overflow_bag_ships
+    floor_bags      = (agg["bag_count"]       - mix["bag_count"])     + overflow_bags
+    floor_semi      = (agg["semi_count"]      - mix["semi_count"])    + overflow_semi
+    floor_totes     = (agg["tote_count"]      - mix["tote_count"])    + overflow_totes
+    floor_sec       = (agg["secondary_count"] - mix["secondary_count"]) + overflow_sec
     floor_total     = floor_bag_ships + floor_semi + floor_totes + floor_sec
 
     if mix_total_ship == 0:
@@ -971,16 +1000,22 @@ def main():
     else:
         mix_v    = sel_v
         mix_cap  = sel_cap
-        mix_util = mix_equiv / sel_cap if sel_cap else 0
-        mix_trucks = max(1, int(np.ceil(mix_util)))
+        mix_util = mix_can_fit_eq / sel_cap if sel_cap else 0
+        mix_trucks = max(1, int(np.ceil(mix_equiv / sel_cap))) if sel_cap else 1
         mix_util_pct = round(mix_util * 100, 1)
         mix_col      = "#16a34a" if mix_util_pct >= 75 else "#f59e0b" if mix_util_pct >= 40 else "#ef4444"
 
         sm1, sm2, sm3, sm4 = st.columns(4)
         with sm1: kcard("🚛 Predicted Vehicle",    str(mix_v),              "for selected mix", "#2563eb")
         with sm2: kcard("📊 Load Utilization",     f"{mix_util_pct}%",      "of vehicle capacity", mix_col)
-        with sm3: kcard("📦 Loading",              f"{mix_total_ship:,}",   "shipments in this mix", "#16a34a")
+        with sm3: kcard("📦 Loading",              f"{mix_loading_ship:,}", "shipments in this mix", "#16a34a")
         with sm4: kcard("⏳ Remains on Floor",     f"{floor_total:,}",      "shipments not dispatched", "#ef4444")
+
+        if not mix_all_fit:
+            st.warning(
+                f"⚠️ Selected mix ({int(mix_equiv):,} equiv. shipments) exceeds {mix_v}'s capacity "
+                f"({sel_cap:,}) — {int(mix_cant_fit_eq):,} equivalent shipments can't fit and stay on the floor."
+            )
 
         st.markdown("<br>", unsafe_allow_html=True)
 
