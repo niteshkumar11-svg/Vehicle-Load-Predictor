@@ -420,6 +420,14 @@ def _shipment_heat_style(v, vmax):
     return "background-color:#fff7ed;color:#9a3412"
 
 
+def table_heading(text):
+    """Big, centered heading used above each data table."""
+    st.markdown(
+        f'<h3 style="text-align:center;font-size:26px;font-weight:800;margin:6px 0 12px">{text}</h3>',
+        unsafe_allow_html=True,
+    )
+
+
 def kcard(label, val, sub="", ac="#2563eb"):
     st.markdown(
         f'<div class="kcard" style="--ac:{ac}">'
@@ -549,7 +557,7 @@ def main():
     )
 
     with col_left:
-        st.markdown("### 🕐 Select Cutoff(s)")
+        table_heading("🕐 Select Cutoff(s)")
         with st.form("cutoff_form", border=False):
             cut_evt = st.dataframe(
                 cutoff_styled,
@@ -574,7 +582,7 @@ def main():
 
         sel_cutoffs = st.session_state.sel_cutoffs
 
-        st.markdown("### 📋 All Vehicles — Comparison Table")
+        table_heading("📋 All Vehicles — Comparison Table")
         vehicles_placeholder = st.empty()
         vehicles_placeholder.caption("Confirm a DH selection on the right to populate this table.")
 
@@ -583,7 +591,7 @@ def main():
 
     with col_right:
         if not sel_cutoffs:
-            st.markdown("### 🏭 DH Load Breakdown")
+            table_heading("🏭 DH Load Breakdown")
             st.info("👆 Select cutoff(s) on the left and click **Confirm** to see the DH breakdown.")
         else:
             filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
@@ -626,7 +634,7 @@ def main():
                 )
                 dh_summary["Status"] = dh_summary["Utilization %"].apply(_status_dot)
 
-            st.markdown(f"### 🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load")
+            table_heading(f"🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load")
 
             if dh_summary.empty:
                 st.success("✅ No pending floor load for any DH in the selected cutoff(s).")
@@ -706,9 +714,14 @@ def main():
         veh_styled, use_container_width=True, hide_index=True,
         height=vehicles_h,
         column_config={
-            "Vehicle":     st.column_config.TextColumn(alignment="center"),
-            "Utilization": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
-            "Status":      st.column_config.TextColumn(alignment="center", width="small"),
+            "Vehicle":                      st.column_config.TextColumn(alignment="center"),
+            "Capacity":                     st.column_config.TextColumn(alignment="center"),
+            "Can Load (equiv.)":             st.column_config.TextColumn(alignment="center"),
+            "Utilization":                  st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+            "Status":                       st.column_config.TextColumn(alignment="center", width="small"),
+            "Remains on Floor (equiv.)":     st.column_config.TextColumn(alignment="center"),
+            "More to reach 100% (equiv.)":   st.column_config.TextColumn(alignment="center"),
+            "Trucks Needed":                st.column_config.NumberColumn(alignment="center", format="%d"),
         },
     )
 

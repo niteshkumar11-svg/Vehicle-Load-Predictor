@@ -1,0 +1,6 @@
+[server]
+runOnSave = true
+
+[theme]
+dataframeHeaderBackgroundColor = "#1e293b"
+dataframeBorderColor = "#334155"
