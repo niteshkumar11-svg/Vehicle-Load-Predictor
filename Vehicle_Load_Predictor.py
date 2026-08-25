@@ -890,7 +890,11 @@ def main():
     rem_to_90_eq = remaining_to_target(can_fit_eq, sel_cap, max_cap)
     rem_to_90_bd = breakdown_remaining(rem_to_90_eq, max_cap)
 
-    r1, r2 = st.columns(2)
+    # Trucks needed of the SELECTED vehicle size to clear the whole floor load
+    # (not the 32 Ft-based count — this depends on which size is picked above).
+    veh_trucks_needed = int(np.ceil(load_eq / sel_cap)) if sel_cap and load_eq else 1
+
+    r1, r2, r3 = st.columns([1, 1, 0.6])
     with r1:
         st.markdown(
             f'<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;padding:18px 20px">'
@@ -931,6 +935,9 @@ def main():
             unsafe_allow_html=True,
         )
 
+    with r3:
+        kcard("🚚 Trucks Needed", f"{veh_trucks_needed}", f"of {sel_v} to clear the floor", "#7c3aed")
+
     if rem_to_90_eq > 0:
         st.markdown(
             f"<div style='background:#fefce8;border:1px solid #fde047;border-radius:10px;"
@@ -943,9 +950,6 @@ def main():
             f"</div>",
             unsafe_allow_html=True,
         )
-
-    if total_frac > 1:
-        st.warning(f"⚠️ Load exceeds 1 truck — minimum **{int(np.ceil(total_frac))} vehicles** required.")
 
     st.divider()
     st.markdown("### 🧪 Load Mix Simulator")
@@ -1032,11 +1036,12 @@ def main():
         mix_util_pct = round(mix_util * 100, 1)
         mix_col      = "#16a34a" if mix_util_pct >= 75 else "#f59e0b" if mix_util_pct >= 40 else "#ef4444"
 
-        sm1, sm2, sm3, sm4 = st.columns(4)
+        sm1, sm2, sm3, sm4, sm5 = st.columns(5)
         with sm1: kcard("🚛 Predicted Vehicle",    str(mix_v),              "for selected mix", "#2563eb")
         with sm2: kcard("📊 Load Utilization",     f"{mix_util_pct}%",      "of vehicle capacity", mix_col)
         with sm3: kcard("📦 Loading",              f"{mix_loading_ship:,}", "shipments in this mix", "#16a34a")
         with sm4: kcard("⏳ Remains on Floor",     f"{floor_total:,}",      "shipments not dispatched", "#ef4444")
+        with sm5: kcard("🚚 Trucks Needed",        f"{mix_trucks}",         f"of {mix_v} for this mix", "#7c3aed")
 
         if not mix_all_fit:
             st.warning(
