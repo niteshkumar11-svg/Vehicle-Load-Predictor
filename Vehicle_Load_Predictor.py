@@ -63,9 +63,14 @@ section[data-testid="stSidebar"]{background:#1e293b!important}
 section[data-testid="stSidebar"] *{color:#f1f5f9!important}
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
-.klabel{font-size:11px;color:rgba(255,255,255,.85);font-weight:700;text-transform:uppercase;letter-spacing:.6px}
-.kvalue{font-size:34px;font-weight:900;color:#ffffff;line-height:1.1;margin:2px 0}
-.ksub  {font-size:12px;color:rgba(255,255,255,.75);margin-top:2px}
+/* Base .klabel/.kvalue/.ksub are reused on white-background detail boxes
+   elsewhere, so they stay dark by default; .kcard scopes its own white text. */
+.klabel{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.6px}
+.kvalue{font-size:34px;font-weight:900;color:var(--ac,#2563eb);line-height:1.1;margin:2px 0}
+.ksub  {font-size:12px;color:#94a3b8;margin-top:2px}
+.kcard .klabel{color:rgba(255,255,255,.85)}
+.kcard .kvalue{color:#ffffff}
+.kcard .ksub  {color:rgba(255,255,255,.75)}
 .predcard{background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:16px;
           padding:24px 26px;color:white;box-shadow:0 8px 28px rgba(37,99,235,.35)}
 .sec-hdr{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
@@ -76,11 +81,12 @@ section[data-testid="stSidebar"] *{color:#f1f5f9!important}
           margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
 
 /* Dashboard name pinned in the sticky app header — always visible, never scrolls away */
-header[data-testid="stHeader"]{height:52px}
+header[data-testid="stHeader"]{height:56px}
 header[data-testid="stHeader"]::before{
     content:"🚛  Vehicle Load Prediction Dashboard";
-    position:absolute; left:60px; top:50%; transform:translateY(-50%);
-    font-size:19px; font-weight:800; color:#1e293b; white-space:nowrap;
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    font-size:24px; font-weight:800; color:#1e293b; white-space:nowrap;
+    pointer-events:none;
 }
 </style>
 """, unsafe_allow_html=True)

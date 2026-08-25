@@ -2,5 +2,9 @@
 runOnSave = true
 
 [theme]
-dataframeHeaderBackgroundColor = "#1e293b"
-dataframeBorderColor = "#334155"
+# NOTE: Streamlit derives dataframe header TEXT color from the app's base
+# textColor (there is no separate header-text override), so the header
+# background must stay light enough for the default dark header text to
+# stay legible — a near-black background here makes the text invisible.
+dataframeHeaderBackgroundColor = "#c7d2fe"
+dataframeBorderColor = "#818cf8"
