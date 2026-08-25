@@ -698,6 +698,11 @@ def main():
         best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, vcaps)
 
     # ── Fill the All Vehicles comparison table (left column) ───────────────────
+    # ship_per_equiv converts the normalized "equivalent" capacity unit back
+    # into the real shipment count for the actual bag/semi/tote/secondary mix
+    # selected, so the table shows exact shipments — never the equivalent unit.
+    ship_per_equiv = (total_ship / req_equiv) if req_equiv else 0
+
     veh_rows = []
     for v, c in vcaps:
         f    = min(req_equiv, c)
@@ -707,11 +712,11 @@ def main():
         veh_rows.append({
             "Vehicle": v,
             "Capacity": f"{c:,}",
-            "Can Load (equiv.)": f"{int(f):,}",
+            "Can Load": f"{int(round(f * ship_per_equiv)):,}",
             "Utilization": u,
             "Status": _status_dot(u),
-            "Remains on Floor (equiv.)": f"{int(left):,}",
-            "More to reach 100% (equiv.)": f"{int(r90):,}" if r90 > 0 else "✅ Optimal",
+            "Remains on Floor": f"{int(round(left * ship_per_equiv)):,}",
+            "More to reach 100%": f"{int(round(r90 * ship_per_equiv)):,}" if r90 > 0 else "✅ Optimal",
             "Trucks Needed": int(np.ceil(req_equiv / c)) if c and req_equiv else 0,
         })
     veh_df = pd.DataFrame(veh_rows)
@@ -720,14 +725,14 @@ def main():
         veh_styled, use_container_width=True, hide_index=True,
         height=vehicles_h,
         column_config={
-            "Vehicle":                      st.column_config.TextColumn(alignment="center"),
-            "Capacity":                     st.column_config.TextColumn(alignment="center"),
-            "Can Load (equiv.)":             st.column_config.TextColumn(alignment="center"),
-            "Utilization":                  st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
-            "Status":                       st.column_config.TextColumn(alignment="center", width="small"),
-            "Remains on Floor (equiv.)":     st.column_config.TextColumn(alignment="center"),
-            "More to reach 100% (equiv.)":   st.column_config.TextColumn(alignment="center"),
-            "Trucks Needed":                st.column_config.NumberColumn(alignment="center", format="%d"),
+            "Vehicle":              st.column_config.TextColumn(alignment="center"),
+            "Capacity":             st.column_config.TextColumn(alignment="center"),
+            "Can Load":             st.column_config.TextColumn(alignment="center"),
+            "Utilization":          st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+            "Status":               st.column_config.TextColumn(alignment="center", width="small"),
+            "Remains on Floor":     st.column_config.TextColumn(alignment="center"),
+            "More to reach 100%":   st.column_config.TextColumn(alignment="center"),
+            "Trucks Needed":        st.column_config.NumberColumn(alignment="center", format="%d"),
         },
     )
 
@@ -910,7 +915,7 @@ def main():
             f"<div style='background:#fefce8;border:1px solid #fde047;border-radius:10px;"
             f"padding:12px 16px;font-size:13px;margin-top:8px'>"
             f"<b>📈 To reach 100% in {sel_v} ({int(sel_cap*TARGET_UTIL):,} shipments):</b>&nbsp; "
-            f"Can load <b>{int(rem_to_90_eq):,}</b> more equivalent shipments — e.g. "
+            f"Can load &nbsp;"
             f"<b>{rem_to_90_bd['bags']:,}</b> bags &nbsp;|&nbsp; "
             f"<b>{rem_to_90_bd['semi']:,}</b> semi-large &nbsp;|&nbsp; "
             f"<b>{rem_to_90_bd['totes']:,}</b> totes"
@@ -986,7 +991,8 @@ def main():
         overflow_totes     = mix["tote_count"]        - mix_can_totes
         overflow_sec       = mix["secondary_count"]   - mix_can_sec
 
-    mix_loading_ship = mix_can_bag_ships + mix_can_semi + mix_can_totes + mix_can_sec
+    mix_loading_ship   = mix_can_bag_ships + mix_can_semi + mix_can_totes + mix_can_sec
+    overflow_total_real = overflow_bag_ships + overflow_semi + overflow_totes + overflow_sec
 
     floor_bag_ships = (agg["bag_shipments"]  - mix["bag_shipments"]) + overflow_bag_ships
     floor_bags      = (agg["bag_count"]       - mix["bag_count"])     + overflow_bags
@@ -1013,8 +1019,8 @@ def main():
 
         if not mix_all_fit:
             st.warning(
-                f"⚠️ Selected mix ({int(mix_equiv):,} equiv. shipments) exceeds {mix_v}'s capacity "
-                f"({sel_cap:,}) — {int(mix_cant_fit_eq):,} equivalent shipments can't fit and stay on the floor."
+                f"⚠️ Selected mix ({mix_total_ship:,} shipments) exceeds {mix_v}'s capacity "
+                f"({sel_cap:,}) — {overflow_total_real:,} shipments can't fit and stay on the floor."
             )
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -1040,9 +1046,8 @@ def main():
             if mix_rem_eq > 0:
                 rem_hint = (
                     f'<div style="font-size:12px;color:{rem_hint_color};margin-top:8px">'
-                    f'📈 {int(mix_rem_eq)} more equivalent shipments to reach 100%'
-                    f' (= {mix_rem_bd["bags"]} bags | {mix_rem_bd["semi"]} semi'
-                    f' | {mix_rem_bd["totes"]} totes)</div>'
+                    f'📈 To reach 100%, can add: {mix_rem_bd["bags"]} bags | {mix_rem_bd["semi"]} semi'
+                    f' | {mix_rem_bd["totes"]} totes</div>'
                 )
             else:
                 rem_hint = '<div style="font-size:12px;color:#16a34a;margin-top:8px">✅ Optimal — 100% utilized</div>'
