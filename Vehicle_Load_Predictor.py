@@ -89,6 +89,20 @@ header[data-testid="stHeader"]::before{
     font-size:24px; font-weight:800; color:#1e293b; white-space:nowrap;
     pointer-events:none;
 }
+
+/* Refresh Data button — rendered in normal flow, visually pinned into the
+   left side of the sticky header instead, and its original slot collapsed
+   so it doesn't leave empty space above the page content. */
+div[data-testid="stButton"]{
+    position:fixed; top:8px; left:68px; z-index:1000000; width:auto!important;
+    margin:0!important; padding:0!important; min-height:0!important;
+}
+div[data-testid="stButton"] button{
+    padding:4px 14px!important; font-size:13px!important;
+}
+div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stButton"]){
+    margin:0!important; padding:0!important; min-height:0!important; height:0!important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -476,11 +490,11 @@ def pbar(label, val, cap, unit, color):
 
 
 def main():
-    hdr_l, hdr_r = st.columns([5, 1])
-    with hdr_r:
-        if st.button("🔄 Refresh Data", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
+    # Rendered in normal flow but visually pinned into the sticky header
+    # (left side) via CSS — see .stButton rule in the <style> block above.
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
 
     with st.spinner("Loading data"):
         try:
