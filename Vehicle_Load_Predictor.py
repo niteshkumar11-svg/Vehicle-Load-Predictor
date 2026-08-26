@@ -62,6 +62,8 @@ st.markdown("""
 /* Sidebar removed — header only */
 section[data-testid="stSidebar"]{display:none!important}
 div[data-testid="collapsedControl"]{display:none!important}
+/* Reduce the default top padding Streamlit adds below the sticky header */
+div[data-testid="stAppViewContainer"] .block-container{padding-top:1rem!important}
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
 /* Base .klabel/.kvalue/.ksub are reused on white-background detail boxes
@@ -490,8 +492,6 @@ def pbar(label, val, cap, unit, color):
 
 
 def main():
-    # Rendered in normal flow but visually pinned into the sticky header
-    # (left side) via CSS — see .stButton rule in the <style> block above.
     if st.button("🔄 Refresh Data"):
         st.cache_data.clear()
         st.rerun()
