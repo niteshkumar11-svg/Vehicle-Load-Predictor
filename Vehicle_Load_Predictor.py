@@ -91,16 +91,16 @@ header[data-testid="stHeader"]::before{
     font-size:24px; font-weight:800; color:#1e293b; white-space:nowrap;
     pointer-events:none;
 }
-/* Small developer credit, right side of header — sits left of the native
-   Share/Star/Edit/GitHub/menu toolbar cluster so it never overlaps them. */
-header[data-testid="stHeader"]::after{
-    content:"Developed by Nitesh Kumar";
-    position:absolute; right:200px; top:50%; transform:translateY(-50%);
+/* Small developer credit — pinned just BELOW the header's toolbar row
+   (Stop/Share/Star/Edit/GitHub/menu) so it never overlaps those controls,
+   including while the app is running and shows the "Stop" indicator. */
+.dev-credit{
+    position:fixed; top:58px; right:16px; z-index:999999;
     font-size:11px; font-weight:500; color:#94a3b8; white-space:nowrap;
-    pointer-events:none;
+    pointer-events:none; background:#f0f2f6;
 }
 @media (max-width:700px){
-    header[data-testid="stHeader"]::after{display:none}
+    .dev-credit{display:none}
 }
 
 /* Refresh Data button — rendered in normal flow, visually pinned into the
@@ -118,6 +118,8 @@ div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stButton"]){
 }
 </style>
 """, unsafe_allow_html=True)
+
+st.markdown('<div class="dev-credit">Developed by Nitesh Kumar</div>', unsafe_allow_html=True)
 
 def _gc():
     if not GSPREAD_OK:
@@ -1147,13 +1149,13 @@ def main():
 
 def render_about_credits():
     st.divider()
-    with st.expander("ⓘ About / Credits"):
-        st.markdown(
-            "**Vehicle Load Prediction Dashboard**  \n"
-            "Version: 1.0  \n"
-            "Developed by: Nitesh Kumar  \n\n"
-            "*Internal tool for vehicle load planning and prediction.*"
-        )
+    st.markdown("ⓘ **About / Credits**")
+    st.markdown(
+        "Vehicle Load Prediction Dashboard  \n"
+        "Version: 1.0  \n"
+        "Developed by: Nitesh Kumar  \n\n"
+        "*Internal tool for vehicle load planning and prediction.*"
+    )
 
 
 if __name__ == "__main__":
