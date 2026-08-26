@@ -91,6 +91,17 @@ header[data-testid="stHeader"]::before{
     font-size:24px; font-weight:800; color:#1e293b; white-space:nowrap;
     pointer-events:none;
 }
+/* Small developer credit, right side of header — sits left of the native
+   Share/Star/Edit/GitHub/menu toolbar cluster so it never overlaps them. */
+header[data-testid="stHeader"]::after{
+    content:"Developed by Nitesh Kumar";
+    position:absolute; right:200px; top:50%; transform:translateY(-50%);
+    font-size:11px; font-weight:500; color:#94a3b8; white-space:nowrap;
+    pointer-events:none;
+}
+@media (max-width:700px){
+    header[data-testid="stHeader"]::after{display:none}
+}
 
 /* Refresh Data button — rendered in normal flow, visually pinned into the
    left side of the sticky header instead, and its original slot collapsed
@@ -1134,5 +1145,17 @@ def main():
             )
 
 
+def render_about_credits():
+    st.divider()
+    with st.expander("ⓘ About / Credits"):
+        st.markdown(
+            "**Vehicle Load Prediction Dashboard**  \n"
+            "Version: 1.0  \n"
+            "Developed by: Nitesh Kumar  \n\n"
+            "*Internal tool for vehicle load planning and prediction.*"
+        )
+
+
 if __name__ == "__main__":
     main()
+    render_about_credits()
