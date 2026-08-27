@@ -265,7 +265,25 @@ def parse(_key):
                 d["cutoff_display"] = d["cutoff"].str[:5]
                 df_dh = d
 
-    return df_bag, df_semi, df_tote, df_sec, vcaps, df_dh
+    # Vehicle Capacity — per-DH MAXIMUM permissible vehicle size (road/infra
+    # constraint). Column B = "DH name", column G = "Vehicle Size" (the
+    # normalized size to use, per business instruction — column D is a raw/
+    # messy variant and is ignored). DHs absent from this sheet are
+    # unrestricted (any vehicle size is allowed).
+    vehcap_v = _find(sheets, "vehicle capacity")
+    dh_max_vehicle = {}
+    if vehcap_v:
+        d = _df(vehcap_v)
+        name_col = next((c for c in d.columns if c.strip().lower() == "dh name"), None)
+        size_col = next((c for c in d.columns if c.strip().lower() == "vehicle size"), None)
+        if name_col and size_col:
+            for _, row in d.iterrows():
+                nm = str(row[name_col]).strip()
+                sz = str(row[size_col]).strip()
+                if nm and nm.lower() != "nan" and sz and sz.lower() != "nan":
+                    dh_max_vehicle.setdefault(_norm(nm), sz)
+
+    return df_bag, df_semi, df_tote, df_sec, vcaps, df_dh, dh_max_vehicle
 
 
 def _match(df, dh_name, nexthop=""):
@@ -372,6 +390,25 @@ def load_to_frac(load):
 def frac_to_equiv(frac, max_cap):
     """Fraction of 32Ft → equivalent shipment count."""
     return frac * max_cap
+
+def _vehicle_size_num(vehicle_name):
+    """Leading number from a vehicle label, e.g. '14 Ft' -> 14.0, '6.5 Ft' -> 6.5."""
+    m = re.search(r"(\d+(?:\.\d+)?)", str(vehicle_name))
+    return float(m.group(1)) if m else None
+
+def allowed_vcaps_for(max_size_str, vcaps):
+    """
+    Restrict vcaps to only vehicles permitted for a DH, per the Vehicle
+    Capacity sheet's max size (e.g. "14 Ft" excludes 17/20/22/24/32 Ft).
+    No restriction (max_size_str falsy, or size not recognised) -> all vcaps.
+    """
+    if not max_size_str:
+        return vcaps
+    max_num = _vehicle_size_num(max_size_str)
+    if max_num is None:
+        return vcaps
+    allowed = [(v, c) for v, c in vcaps if (_vehicle_size_num(v) or 0) <= max_num + 1e-6]
+    return allowed if allowed else vcaps
 
 def recommend_vehicle(total_frac, vcaps):
     """
@@ -513,7 +550,7 @@ def main():
         try:
             raw  = load_sheets()
             _key = tuple(sorted(raw.keys()))
-            df_bag, df_semi, df_tote, df_sec, vcaps, df_dh = parse(_key)
+            df_bag, df_semi, df_tote, df_sec, vcaps, df_dh, dh_max_vehicle = parse(_key)
         except Exception as e:
             st.error(f"❌ Could not load sheet: {e}")
             st.stop()
@@ -654,7 +691,10 @@ def main():
                 merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
                                  tote_count=ld["tote_count"], secondary_count=0)
                 frac = load_to_frac(merged_ld)
-                rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(frac, vcaps)
+
+                max_v_str  = dh_max_vehicle.get(_norm(dh_n))
+                dh_vcaps   = allowed_vcaps_for(max_v_str, vcaps)
+                rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(frac, dh_vcaps)
 
                 dh_rows.append({
                     "Cut Off":             dr["cutoff_display"],
@@ -664,7 +704,7 @@ def main():
                     "Semi Large":          ld["semi_count"],
                     "Totes":               ld["tote_count"],
                     "Total Shipment":      total_ship_row,
-                    "Max Vehicle Size":    rec_cap if rec_cap else 0,
+                    "Max Vehicle Size":    max_v_str if max_v_str else "All vehicles",
                     "Recommended Vehicle": rec_v   if rec_v   else "—",
                     "Utilization %":       round(rec_util * 100, 1) if rec_v else 0.0,
                 })
@@ -702,7 +742,7 @@ def main():
                             "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
                             "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
                             "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
-                            "Max Vehicle Size":    st.column_config.NumberColumn(alignment="center", format="%d"),
+                            "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
                             "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
                             "Utilization %":       st.column_config.ProgressColumn(
                                 format="%.1f%%", min_value=0, max_value=100,
@@ -717,23 +757,55 @@ def main():
 
     sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
 
-    # ── Aggregate confirmed DH selection (secondary already folded into bags) ──
-    agg = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
-    for dh_n in sel_names:
-        ld = dh_loads_map[dh_n]
-        sec_bags = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
-        agg["bag_count"]     += ld["bag_count"] + sec_bags
-        agg["bag_shipments"] += ld["bag_shipments"] + ld["secondary_count"]
-        agg["semi_count"]    += ld["semi_count"]
-        agg["tote_count"]    += ld["tote_count"]
+    def _agg_for(names):
+        a = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
+        for dh_n in names:
+            ld = dh_loads_map[dh_n]
+            sec_bags = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
+            a["bag_count"]     += ld["bag_count"] + sec_bags
+            a["bag_shipments"] += ld["bag_shipments"] + ld["secondary_count"]
+            a["semi_count"]    += ld["semi_count"]
+            a["tote_count"]    += ld["tote_count"]
+        return a
 
+    # ── Aggregate confirmed DH selection (secondary already folded into bags) ──
+    agg = _agg_for(sel_names)
     total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"]
     total_frac = load_to_frac(agg) if total_ship else 0.0
     req_equiv  = frac_to_equiv(total_frac, max_cap) if total_ship else 0
     best_v = best_cap = best_util = n_trucks = None
+    truck_breakdown, group_predictions = [], []
+
+    # Selected DHs may have DIFFERENT max-permissible-vehicle constraints
+    # (Vehicle Capacity sheet). Group by constraint; if everything shares one
+    # constraint (incl. "unrestricted"), predict once as before. Otherwise
+    # predict PER GROUP, each restricted to its own allowed vehicles.
+    constraint_groups = {}
+    for dh_n in sel_names:
+        key = dh_max_vehicle.get(_norm(dh_n)) or "All vehicles"
+        constraint_groups.setdefault(key, []).append(dh_n)
 
     if total_ship:
-        best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, vcaps)
+        if len(constraint_groups) <= 1:
+            only_key = next(iter(constraint_groups), None)
+            allowed  = allowed_vcaps_for(None if only_key == "All vehicles" else only_key, vcaps)
+            best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, allowed)
+        else:
+            total_trucks = 0
+            for key, names in constraint_groups.items():
+                g_agg  = _agg_for(names)
+                g_ship = g_agg["bag_shipments"] + g_agg["semi_count"] + g_agg["tote_count"]
+                if not g_ship:
+                    continue
+                g_frac   = load_to_frac(g_agg)
+                allowed  = allowed_vcaps_for(None if key == "All vehicles" else key, vcaps)
+                g_v, g_cap, g_util, g_trucks, g_bd = recommend_vehicle(g_frac, allowed)
+                group_predictions.append({
+                    "names": names, "constraint": key, "vehicle": g_v,
+                    "util_pct": round(g_util * 100, 1) if g_v else 0.0, "trucks": g_trucks,
+                })
+                total_trucks += g_trucks
+            n_trucks = total_trucks
 
     # ── Fill the All Vehicles comparison table (left column) ───────────────────
     # ship_per_equiv converts the normalized "equivalent" capacity unit back
@@ -773,49 +845,38 @@ def main():
     )
 
     # ── Fill the combined box with the prediction, once a DH selection is confirmed ──
-    if best_v is not None:
-        util_pct = round(best_util * 100, 1)
-        conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
+    if best_v is not None or group_predictions:
+        if best_v is not None:
+            util_pct = round(best_util * 100, 1)
+            conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
-        # Utilization block: one blended number for a single vehicle, or one
-        # line PER TRUCK when the load spans multiple trucks — each truck's
-        # own utilization shown individually, even if the vehicle type repeats.
-        if len(truck_breakdown) > 1:
-            util_lines = ""
-            for i, tb in enumerate(truck_breakdown, start=1):
-                pct    = round(tb["util_frac"] * 100, 1)
-                tb_col = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
-                util_lines += (
-                    f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
-                    f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
+            # Utilization block: one blended number for a single vehicle, or one
+            # line PER TRUCK when the load spans multiple trucks — each truck's
+            # own utilization shown individually, even if the vehicle type repeats.
+            if len(truck_breakdown) > 1:
+                util_lines = ""
+                for i, tb in enumerate(truck_breakdown, start=1):
+                    pct    = round(tb["util_frac"] * 100, 1)
+                    tb_col = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
+                    util_lines += (
+                        f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
+                        f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
+                    )
+                util_block = (
+                    f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Utilization / Vehicle</div>'
+                    f'{util_lines}'
+                    f'</div>'
                 )
-            util_block = (
-                f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Utilization / Vehicle</div>'
-                f'{util_lines}'
-                f'</div>'
-            )
-        else:
-            util_block = (
-                f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
-                f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
-                f'</div>'
-            )
+            else:
+                util_block = (
+                    f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
+                    f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
+                    f'</div>'
+                )
 
-        with main_box.container():
-            st.markdown(
-                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
-                # ── LEFT: load bifurcation for the confirmed selection ──
-                f'<div style="flex:1;min-width:0">'
-                f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
-                f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
-                f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
-                f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
-                f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
-                f'  </div>'
-                f'</div>'
-                # ── RIGHT: vehicle prediction ──
+            right_html = (
                 f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
                 f'  <div>'
                 f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
@@ -831,6 +892,45 @@ def main():
                 f'    <div style="font-size:28px;font-weight:900">{total_ship:,}</div>'
                 f'  </div>'
                 f'</div>'
+            )
+        else:
+            # Multiple DHs selected with DIFFERENT max-permissible-vehicle
+            # constraints (Vehicle Capacity sheet) — one prediction per group,
+            # each naming the DHs it applies to, inside the same box.
+            group_lines = ""
+            for g in group_predictions:
+                names_preview = ", ".join(g["names"][:3]) + ("…" if len(g["names"]) > 3 else "")
+                cap_note = "" if g["constraint"] == "All vehicles" else f' (max {g["constraint"]})'
+                group_lines += (
+                    f'<div style="margin-top:10px">'
+                    f'  <span style="font-size:20px;font-weight:900">{g["vehicle"] or "—"}</span>'
+                    f'  <span style="font-size:13px;opacity:.85"> — {g["trucks"]} truck(s) @ {g["util_pct"]}%</span>'
+                    f'  <div style="font-size:11px;opacity:.7">{names_preview}{cap_note}</div>'
+                    f'</div>'
+                )
+            right_html = (
+                f'<div style="flex:1.4;min-width:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
+                f'  <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Predictions by Vehicle Constraint</div>'
+                f'  {group_lines}'
+                f'  <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.25);font-size:13px">'
+                f'    Total: <b>{n_trucks}</b> truck(s) &nbsp;|&nbsp; <b>{total_ship:,}</b> shipments'
+                f'  </div>'
+                f'</div>'
+            )
+
+        with main_box.container():
+            st.markdown(
+                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
+                # ── LEFT: load bifurcation for the confirmed selection ──
+                f'<div style="flex:1;min-width:0">'
+                f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
+                f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
+                f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
+                f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
+                f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
+                f'  </div>'
+                f'</div>'
+                f'{right_html}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -848,7 +948,7 @@ def main():
 
     st.divider()
 
-    if best_v is None:
+    if not sel_names or total_ship == 0:
         st.info("👆 Select cutoff(s), click Confirm, then select DH(s) on the right and click Confirm to see the combined prediction above.")
         return
 
