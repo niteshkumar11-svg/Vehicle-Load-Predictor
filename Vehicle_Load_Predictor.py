@@ -229,9 +229,6 @@ def parse(_key):
             df_sec["destination"] = df_sec["destination"].astype(str).str.strip()
             df_sec = df_sec[df_sec["destination"].notna() & (df_sec["destination"] != "nan")]
 
-    # Bagging Pending — same treatment as Secondary Pending: each row is one
-    # shipment waiting to be bagged, folded into bag counts at 30/bag. Its
-    # destination column is "shipment_facility_name" (not the *_id column).
     bagging_v = _find(sheets, "bagging")
     if bagging_v:
         d = _df(bagging_v)
@@ -287,11 +284,6 @@ def parse(_key):
                 d["cutoff_display"] = d["cutoff"].str[:5]
                 df_dh = d
 
-    # Vehicle Capacity — per-DH MAXIMUM permissible vehicle size (road/infra
-    # constraint). Column B = "DH name", column G = "Vehicle Size" (the
-    # normalized size to use, per business instruction — column D is a raw/
-    # messy variant and is ignored). DHs absent from this sheet are
-    # unrestricted (any vehicle size is allowed).
     vehcap_v = _find(sheets, "vehicle capacity")
     dh_max_vehicle = {}
     if vehcap_v:
@@ -449,16 +441,12 @@ def recommend_vehicle(total_frac, vcaps):
     if total_frac > 1:
         n = int(np.ceil(total_frac))
         max_v = next(v for v, c in vcaps if c == max_cap)
-        # last partial truck — utilisation must be relative to ITS OWN capacity,
-        # not the max-cap capacity used to size the full trucks before it.
         rem_frac       = total_frac - (n - 1)
         rem_cap        = rem_frac * max_cap
         last_v, last_c = next(((v, c) for v, c in vcaps if c >= rem_cap), vcaps[-1])
         last_util      = rem_cap / last_c if last_c else 0.0
         breakdown = [{"vehicle": max_v, "capacity": max_cap, "util_frac": 1.0} for _ in range(n - 1)]
         breakdown.append({"vehicle": last_v, "capacity": last_c, "util_frac": last_util})
-        # Collapse the label when the last (partial) truck is the SAME type
-        # as the full trucks — e.g. "32 Ft × 2" instead of "32 Ft × 1 + 32 Ft".
         label = f"{max_v} × {n}" if last_v == max_v else f"{max_v} × {n-1} + {last_v}"
         return label, max_cap, last_util, n, breakdown
 
@@ -486,8 +474,6 @@ def breakdown_remaining(equiv_remaining, max_cap):
         secondary = int(frac * SECONDARY_32FT),
     )
 
-
-# ── Table cell styling (pandas Styler — no extra deps needed) ────────────────
 def _status_dot(util_pct):
     """🟢/🟡/🔴 status dot for a utilization percentage."""
     if util_pct >= 75:
@@ -586,7 +572,6 @@ def main():
         st.warning("⚠️ DH Name Cut-Off sheet not found.")
         return
 
-    # ── Confirmed (submitted) selections persist in session state ────────────────
     for k, v in [("sel_cutoffs", []), ("sel_dh_names", [])]:
         if k not in st.session_state:
             st.session_state[k] = v
@@ -594,13 +579,14 @@ def main():
     last_updated = _data_fetched_at(_key)
     st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
 
-    # ── Single combined box: overall overview by default, swapped for the
-    #    combined prediction once a DH selection is confirmed. Pinned to the
-    #    top of the viewport while scrolling (see .st-key-pred_sticky CSS). ──
-    main_box = st.empty()
+    # The sticky wrapper is created exactly ONCE per run (a repeated st.empty()
+    # container.container(key=...) call would raise StreamlitDuplicateElementKey
+    # since main_box's content is replaced several times later in this script).
+    with st.container(key="pred_sticky"):
+        main_box = st.empty()
 
     def render_overview_default():
-        with main_box.container(key="pred_sticky"):
+        with main_box.container():
             bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
@@ -631,7 +617,6 @@ def main():
     render_overview_default()
     st.divider()
 
-    # ── Total pending shipments per cutoff (for the new cutoff-table column) ────
     cutoff_ship_totals = {}
     for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
         dh_n = str(dr["dh_name"])
@@ -650,11 +635,8 @@ def main():
     )
     cutoff_tbl["Total Shipment"] = cutoff_tbl["Cutoff"].map(cutoff_ship_totals).fillna(0).astype(int)
 
-    # DH table shown "in one view" — a single generous height instead of
-    # matching a now-removed side table's height.
     dh_h = 650
 
-    # ── Cutoff: single-select dropdown (shows pending load per cutoff) + Apply ──
     table_heading("🕐 Select Cutoff")
     cutoff_options = [
         f"{r['Cutoff']} — {r['Total Shipment']:,} pending"
@@ -780,7 +762,6 @@ def main():
             a["tote_count"]    += ld["tote_count"]
         return a
 
-    # ── Aggregate confirmed DH selection (secondary already folded into bags) ──
     agg = _agg_for(sel_names)
     total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"]
     total_frac = load_to_frac(agg) if total_ship else 0.0
@@ -788,14 +769,6 @@ def main():
     best_v = best_cap = best_util = n_trucks = None
     truck_breakdown = []
 
-    # Selected DHs may have DIFFERENT max-permissible-vehicle constraints
-    # (Vehicle Capacity sheet). The COMBINED prediction is capped at the
-    # single MOST RESTRICTIVE (smallest) constraint among them — e.g. one DH
-    # capped at 20 Ft + another at 14 Ft -> the whole combined load is
-    # predicted using only vehicles up to 14 Ft, splitting into multiple
-    # trucks of that size (or smaller, for the remainder) if the combined
-    # load needs more than one. DHs with no constraint ("All vehicles")
-    # don't limit anything.
     constrained_nums = [
         n for n in (
             _vehicle_size_num(dh_max_vehicle[_norm(dh_n)])
@@ -809,26 +782,14 @@ def main():
     if total_ship:
         best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, allowed)
 
-    # ship_per_equiv converts the normalized "equivalent" capacity unit back
-    # into the real shipment count for the actual bag/semi/tote/secondary mix
-    # selected, so numbers shown to the user are real shipments — never the
-    # internal equivalent unit — and sanity-check against Total Shipments.
     ship_per_equiv = (total_ship / req_equiv) if req_equiv else 0
 
-    # ── Fill the combined box with the prediction, once a DH selection is confirmed ──
     if best_v is not None:
         util_pct = round(best_util * 100, 1)
         conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
-        # Real-shipment capacity of the recommended vehicle, for this exact
-        # bag/semi/tote/secondary mix — lets "Total Shipments" and the
-        # vehicle's capacity be compared directly, instead of leaving the
-        # user to reconcile a % against an internal equivalent-capacity unit.
         best_real_cap = int(round(best_cap * ship_per_equiv)) if isinstance(best_cap, int) else None
 
-        # Utilization block: one blended number for a single vehicle, or one
-        # line PER TRUCK when the load spans multiple trucks — each truck's
-        # own utilization shown individually, even if the vehicle type repeats.
         if len(truck_breakdown) > 1:
             util_lines = ""
             for i, tb in enumerate(truck_breakdown, start=1):
@@ -875,10 +836,10 @@ def main():
             f'</div>'
         )
 
-        with main_box.container(key="pred_sticky"):
+        with main_box.container():
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
-                # ── LEFT: load bifurcation for the confirmed selection ──
+                
                 f'<div style="flex:1;min-width:0">'
                 f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
                 f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
@@ -891,7 +852,6 @@ def main():
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            # DH names as wrapping chips BELOW the box (outside, one after another)
             st.markdown(f"#### Selected DHs ({len(sel_names)})")
             chips = "".join(
                 f'<span style="display:inline-block;background:#eef2ff;color:#3730a3;'
@@ -900,7 +860,7 @@ def main():
             )
             st.markdown(f'<div style="line-height:2.2">{chips}</div>', unsafe_allow_html=True)
     elif sel_names:
-        with main_box.container(key="pred_sticky"):
+        with main_box.container():
             st.success(f"✅ No pending floor load for {len(sel_names)} selected DH(s).")
 
     st.divider()
@@ -921,8 +881,6 @@ def main():
     )
     sel_cap = next(c for v, c in vcaps if v == sel_v)
 
-    # Simulated per DH — same selected vehicle size applied to EACH DH's own
-    # actual floor load individually, rather than one blended aggregate.
     for _dh_i, dh_n in enumerate(sel_names):
         dh_agg   = _agg_for([dh_n])
         dh_ship  = dh_agg["bag_shipments"] + dh_agg["semi_count"] + dh_agg["tote_count"]
@@ -966,8 +924,7 @@ def main():
 
         rem_to_90_eq = remaining_to_target(can_fit_eq, sel_cap, max_cap)
         rem_to_90_bd = breakdown_remaining(rem_to_90_eq, max_cap)
-
-        # Trucks needed of the SELECTED vehicle size to clear THIS DH's floor load.
+        
         veh_trucks_needed = int(np.ceil(load_eq / sel_cap)) if sel_cap and load_eq else 1
 
         r1, r2, r3 = st.columns([1, 1, 0.6])
@@ -1070,8 +1027,6 @@ def main():
     if not any_type_selected:
         st.warning("⚠️ No load types selected. Select at least one type above.")
     else:
-        # Simulated per DH — the same checkbox selection and vehicle size
-        # applied to EACH DH's own actual load individually.
         for _mix_i, dh_n in enumerate(sel_names):
             dh_agg  = _agg_for([dh_n])
             dh_ship = dh_agg["bag_shipments"] + dh_agg["semi_count"] + dh_agg["tote_count"]
@@ -1093,10 +1048,6 @@ def main():
             mix_total_ship = mix["bag_shipments"] + mix["semi_count"] + mix["tote_count"] + mix["secondary_count"]
             mix_frac       = load_to_frac(mix)
             mix_equiv      = frac_to_equiv(mix_frac, max_cap)
-
-            # What the selected vehicle can actually hold vs. what overflows —
-            # a single vehicle can never be loaded beyond its own capacity, so
-            # any excess must show up as pending-on-floor instead of >100%.
             mix_can_fit_eq  = min(mix_equiv, mix_sel_cap)
             mix_cant_fit_eq = max(0.0, mix_equiv - mix_sel_cap)
             mix_all_fit     = mix_cant_fit_eq == 0
