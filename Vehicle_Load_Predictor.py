@@ -782,38 +782,28 @@ def main():
     total_frac = load_to_frac(agg) if total_ship else 0.0
     req_equiv  = frac_to_equiv(total_frac, max_cap) if total_ship else 0
     best_v = best_cap = best_util = n_trucks = None
-    truck_breakdown, group_predictions = [], []
+    truck_breakdown = []
 
     # Selected DHs may have DIFFERENT max-permissible-vehicle constraints
-    # (Vehicle Capacity sheet). Group by constraint; if everything shares one
-    # constraint (incl. "unrestricted"), predict once as before. Otherwise
-    # predict PER GROUP, each restricted to its own allowed vehicles.
-    constraint_groups = {}
-    for dh_n in sel_names:
-        key = dh_max_vehicle.get(_norm(dh_n)) or "All vehicles"
-        constraint_groups.setdefault(key, []).append(dh_n)
+    # (Vehicle Capacity sheet). The COMBINED prediction is capped at the
+    # single MOST RESTRICTIVE (smallest) constraint among them — e.g. one DH
+    # capped at 20 Ft + another at 14 Ft -> the whole combined load is
+    # predicted using only vehicles up to 14 Ft, splitting into multiple
+    # trucks of that size (or smaller, for the remainder) if the combined
+    # load needs more than one. DHs with no constraint ("All vehicles")
+    # don't limit anything.
+    constrained_nums = [
+        n for n in (
+            _vehicle_size_num(dh_max_vehicle[_norm(dh_n)])
+            for dh_n in sel_names
+            if dh_max_vehicle.get(_norm(dh_n))
+        ) if n is not None
+    ]
+    min_constraint = min(constrained_nums) if constrained_nums else None
+    allowed = allowed_vcaps_for(f"{min_constraint} Ft" if min_constraint is not None else None, vcaps)
 
     if total_ship:
-        if len(constraint_groups) <= 1:
-            only_key = next(iter(constraint_groups), None)
-            allowed  = allowed_vcaps_for(None if only_key == "All vehicles" else only_key, vcaps)
-            best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, allowed)
-        else:
-            total_trucks = 0
-            for key, names in constraint_groups.items():
-                g_agg  = _agg_for(names)
-                g_ship = g_agg["bag_shipments"] + g_agg["semi_count"] + g_agg["tote_count"]
-                if not g_ship:
-                    continue
-                g_frac   = load_to_frac(g_agg)
-                allowed  = allowed_vcaps_for(None if key == "All vehicles" else key, vcaps)
-                g_v, g_cap, g_util, g_trucks, g_bd = recommend_vehicle(g_frac, allowed)
-                group_predictions.append({
-                    "names": names, "constraint": key, "vehicle": g_v,
-                    "util_pct": round(g_util * 100, 1) if g_v else 0.0, "trucks": g_trucks,
-                })
-                total_trucks += g_trucks
-            n_trucks = total_trucks
+        best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, allowed)
 
     # ── Fill the All Vehicles comparison table (left column) ───────────────────
     # ship_per_equiv converts the normalized "equivalent" capacity unit back
@@ -853,95 +843,53 @@ def main():
     )
 
     # ── Fill the combined box with the prediction, once a DH selection is confirmed ──
-    if best_v is not None or group_predictions:
-        if best_v is not None:
-            util_pct = round(best_util * 100, 1)
-            conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
+    if best_v is not None:
+        util_pct = round(best_util * 100, 1)
+        conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
-            # Utilization block: one blended number for a single vehicle, or one
-            # line PER TRUCK when the load spans multiple trucks — each truck's
-            # own utilization shown individually, even if the vehicle type repeats.
-            if len(truck_breakdown) > 1:
-                util_lines = ""
-                for i, tb in enumerate(truck_breakdown, start=1):
-                    pct    = round(tb["util_frac"] * 100, 1)
-                    tb_col = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
-                    util_lines += (
-                        f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
-                        f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
-                    )
-                util_block = (
-                    f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                    f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Utilization / Vehicle</div>'
-                    f'{util_lines}'
-                    f'</div>'
-                )
-            else:
-                util_block = (
-                    f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                    f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
-                    f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
-                    f'</div>'
-                )
-
-            right_html = (
-                f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
-                f'  <div>'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
-                f'    <div style="font-size:42px;font-weight:900;margin:2px 0;letter-spacing:-1px">{best_v}</div>'
-                f'  </div>'
-                f'{util_block}'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Trucks Needed</div>'
-                f'    <div style="font-size:28px;font-weight:900">{n_trucks}</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Total Shipments</div>'
-                f'    <div style="font-size:28px;font-weight:900">{total_ship:,}</div>'
-                f'  </div>'
-                f'</div>'
-            )
-        else:
-            # Multiple DHs selected with DIFFERENT max-permissible-vehicle
-            # constraints (Vehicle Capacity sheet) — same 4-column layout as
-            # the single-vehicle case, but "Recommended Vehicle" and "Load
-            # Utilization" each list one "{vehicle} - {DH name(s)}" line per
-            # group instead of a single blended value.
-            veh_lines = ""
+        # Utilization block: one blended number for a single vehicle, or one
+        # line PER TRUCK when the load spans multiple trucks — each truck's
+        # own utilization shown individually, even if the vehicle type repeats.
+        if len(truck_breakdown) > 1:
             util_lines = ""
-            for g in group_predictions:
-                names_joined = ", ".join(g["names"])
-                veh_lines += (
-                    f'<div style="font-size:16px;font-weight:800;margin-top:4px">'
-                    f'{g["vehicle"] or "—"} - {names_joined}</div>'
-                )
-                pct    = g["util_pct"]
+            for i, tb in enumerate(truck_breakdown, start=1):
+                pct    = round(tb["util_frac"] * 100, 1)
                 tb_col = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
                 util_lines += (
                     f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
-                    f'{g["vehicle"] or "—"} - {pct}%</div>'
+                    f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
                 )
-
-            right_html = (
-                f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
-                f'  <div>'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
-                f'    {veh_lines}'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
-                f'    {util_lines}'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Trucks Needed</div>'
-                f'    <div style="font-size:28px;font-weight:900">{n_trucks}</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Total Shipments</div>'
-                f'    <div style="font-size:28px;font-weight:900">{total_ship:,}</div>'
-                f'  </div>'
+            util_block = (
+                f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Utilization / Vehicle</div>'
+                f'{util_lines}'
                 f'</div>'
             )
+        else:
+            util_block = (
+                f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
+                f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
+                f'</div>'
+            )
+
+        right_html = (
+            f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
+            f'  <div>'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
+            f'    <div style="font-size:42px;font-weight:900;margin:2px 0;letter-spacing:-1px">{best_v}</div>'
+            f'  </div>'
+            f'{util_block}'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Trucks Needed</div>'
+            f'    <div style="font-size:28px;font-weight:900">{n_trucks}</div>'
+            f'  </div>'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Total Shipments</div>'
+            f'    <div style="font-size:28px;font-weight:900">{total_ship:,}</div>'
+            f'  </div>'
+            f'</div>'
+        )
 
         with main_box.container():
             st.markdown(
