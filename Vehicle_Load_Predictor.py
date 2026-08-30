@@ -64,7 +64,7 @@ st.markdown("""
    Very faint at normal zoom, reads clearly when zoomed in. */
 .stApp{
     background-color:#f0f2f6;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='200'%3E%3Ctext x='20' y='110' font-family='Arial,sans-serif' font-size='36' font-weight='800' fill='rgba(30,41,59,0.01)' transform='rotate(-30 130 100)'%3EN K%3C/text%3E%3C/svg%3E");
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='200'%3E%3Ctext x='20' y='110' font-family='Arial,sans-serif' font-size='36' font-weight='800' fill='rgba(30,41,59,0.025)' transform='rotate(-30 130 100)'%3EN K%3C/text%3E%3C/svg%3E");
     background-repeat:repeat;
 }
 /* Sidebar removed — header only */
