@@ -805,10 +805,10 @@ def main():
     if total_ship:
         best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, allowed)
 
-    # ── Fill the All Vehicles comparison table (left column) ───────────────────
     # ship_per_equiv converts the normalized "equivalent" capacity unit back
     # into the real shipment count for the actual bag/semi/tote/secondary mix
-    # selected, so the table shows exact shipments — never the equivalent unit.
+    # selected, so numbers shown to the user are real shipments — never the
+    # internal equivalent unit — and sanity-check against Total Shipments.
     ship_per_equiv = (total_ship / req_equiv) if req_equiv else 0
 
     veh_rows = []
@@ -847,17 +847,25 @@ def main():
         util_pct = round(best_util * 100, 1)
         conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
 
+        # Real-shipment capacity of the recommended vehicle, for this exact
+        # bag/semi/tote/secondary mix — lets "Total Shipments" and the
+        # vehicle's capacity be compared directly, instead of leaving the
+        # user to reconcile a % against an internal equivalent-capacity unit.
+        best_real_cap = int(round(best_cap * ship_per_equiv)) if isinstance(best_cap, int) else None
+
         # Utilization block: one blended number for a single vehicle, or one
         # line PER TRUCK when the load spans multiple trucks — each truck's
         # own utilization shown individually, even if the vehicle type repeats.
         if len(truck_breakdown) > 1:
             util_lines = ""
             for i, tb in enumerate(truck_breakdown, start=1):
-                pct    = round(tb["util_frac"] * 100, 1)
-                tb_col = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
+                pct      = round(tb["util_frac"] * 100, 1)
+                tb_col   = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
+                tb_real  = int(round(tb["capacity"] * ship_per_equiv))
                 util_lines += (
                     f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
                     f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
+                    f'<div style="font-size:11px;opacity:.7">~{tb_real:,} shipments capacity</div>'
                 )
             util_block = (
                 f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
@@ -873,11 +881,14 @@ def main():
                 f'</div>'
             )
 
+        cap_sub = f'<div style="font-size:12px;opacity:.7;margin-top:4px">~{best_real_cap:,} shipments capacity</div>' if best_real_cap is not None else ""
+
         right_html = (
             f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
             f'  <div>'
             f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🎯 Recommended Vehicle</div>'
             f'    <div style="font-size:42px;font-weight:900;margin:2px 0;letter-spacing:-1px">{best_v}</div>'
+            f'    {cap_sub}'
             f'  </div>'
             f'{util_block}'
             f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
