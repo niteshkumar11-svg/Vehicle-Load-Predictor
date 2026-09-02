@@ -74,11 +74,26 @@ div[data-testid="collapsedControl"]{display:none!important}
 /* Reduce the default top padding Streamlit adds below the sticky header */
 div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!important}
 /* Combined Prediction box + Selected DHs pinned to the top while scrolling.
-   Uses a keyed st.container(key="pred_sticky") so this class applies to
-   its Streamlit-generated wrapper. Background matches the page so scrolled
-   content doesn't show through the gaps between the box and the chips. */
+   NOTE: position:sticky does NOT work here — Streamlit wraps every
+   st.container() in its own shrink-to-fit wrapper div, which never gives a
+   sticky child room to "stick" within (verified via direct DOM testing:
+   the wrapper's height always equals its child's height, so there's no
+   scrollable range for sticky to hold position against). Using
+   position:fixed instead, which is proven to work in this app already
+   (header credit, Refresh button). left/right approximate Streamlit's wide
+   layout side padding — tweak if it doesn't line up with the tables below. */
 .st-key-pred_sticky{
-    position:sticky; top:72px; z-index:500; background:#f0f2f6; padding-bottom:10px;
+    position:fixed; top:72px; left:80px; right:80px; z-index:500;
+    background:#f0f2f6; padding-bottom:10px;
+}
+@media (max-width:900px){
+    .st-key-pred_sticky{left:16px; right:16px}
+}
+/* Reserves the space the box would have occupied in normal flow, since
+   position:fixed removes it — otherwise content below jumps up underneath it. */
+.pred-sticky-spacer{height:180px}
+@media (max-width:900px){
+    .pred-sticky-spacer{height:260px}
 }
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
@@ -577,10 +592,15 @@ def main():
             st.session_state[k] = v
 
     last_updated = _data_fetched_at(_key)
-    st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
 
+    # Fixed (not sticky — see CSS comment) so this stays pinned below the
+    # header while the cutoff dropdown / DH table scroll underneath it.
     with st.container(key="pred_sticky"):
+        st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
         main_box = st.empty()
+    # Reserves the vertical space the fixed box occupies so content below
+    # doesn't render underneath/hidden by it.
+    st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
 
     def render_overview_default():
         with main_box.container():
