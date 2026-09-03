@@ -140,22 +140,7 @@ header[data-testid="stHeader"]::before{
     .dev-credit{display:none}
 }
 
-/* Refresh Data button ONLY (scoped via key so this doesn't hijack the
-   sidebar nav buttons, which also render as stButton) — rendered in
-   normal flow, visually pinned into the left side of the sticky header
-   instead, and its original slot collapsed so it doesn't leave empty
-   space above the page content. */
-.st-key-refresh_btn{
-    position:fixed; top:8px; left:68px; z-index:1000000; width:auto!important;
-    margin:0!important; padding:0!important; min-height:0!important;
-}
-.st-key-refresh_btn button{
-    padding:4px 14px!important; font-size:13px!important;
-}
-div[data-testid="stVerticalBlock"] > div:has(> .st-key-refresh_btn){
-    margin:0!important; padding:0!important; min-height:0!important; height:0!important;
-}
-/* Sidebar nav buttons: full width, minimal gap between the two */
+/* Sidebar buttons (nav + refresh): full width, consistent sizing */
 section[data-testid="stSidebar"] div[data-testid="stButton"] button{
     font-size:13px!important;
 }
@@ -751,10 +736,6 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
 
 
 def main():
-    if st.button("🔄 Refresh Data", key="refresh_btn"):
-        st.cache_data.clear()
-        st.rerun()
-
     with st.spinner("Loading data"):
         try:
             raw  = load_sheets()
@@ -794,6 +775,9 @@ def main():
             type="primary" if st.session_state.active_tab == "ready" else "secondary",
         ):
             st.session_state.active_tab = "ready"
+        if st.button("🔄 Refresh Data", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
     # ── Tab 1: existing dashboard, unchanged ────────────────────────────────
     if st.session_state.active_tab == "overview":
