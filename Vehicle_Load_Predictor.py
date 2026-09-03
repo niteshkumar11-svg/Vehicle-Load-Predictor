@@ -82,7 +82,7 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!importan
    position:fixed instead, which is proven to work in this app already
    (header credit, Refresh button). left/right approximate Streamlit's wide
    layout side padding — tweak if it doesn't line up with the tables below. */
-.st-key-pred_sticky{
+.st-key-pred_sticky, .st-key-ready_pred_sticky{
     position:fixed!important; top:72px!important; left:24px!important; right:24px!important;
     width:calc(100vw - 48px)!important; max-width:calc(100vw - 48px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
@@ -563,228 +563,86 @@ def pbar(label, val, cap, unit, color):
         f'</div>', unsafe_allow_html=True)
 
 
-def main():
-    if st.button("🔄 Refresh Data"):
-        st.cache_data.clear()
-        st.rerun()
-
-    with st.spinner("Loading data"):
-        try:
-            raw  = load_sheets()
-            _key = tuple(sorted(raw.keys()))
-            df_bag, df_semi, df_tote, df_sec, vcaps, df_dh, dh_max_vehicle = parse(_key)
-        except Exception as e:
-            st.error(f"❌ Could not load sheet: {e}")
-            st.stop()
-
-    max_cap = max(c for _, c in vcaps)
-
-    with st.spinner("Computing DH loads…"):
-        all_dh_loads = compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh)
-
-    if df_dh.empty:
-        st.warning("⚠️ DH Name Cut-Off sheet not found.")
-        return
-
-    for k, v in [("sel_cutoffs", []), ("sel_dh_names", [])]:
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-    last_updated = _data_fetched_at(_key)
-
-    # Fixed (not sticky — see CSS comment) so this stays pinned below the
-    # header while the cutoff dropdown / DH table scroll underneath it.
-    with st.container(key="pred_sticky"):
-        st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
-        main_box = st.empty()
-    # Reserves the vertical space the fixed box occupies so content below
-    # doesn't render underneath/hidden by it.
-    st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
-
-    def render_overview_default():
-        with main_box.container():
-            bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
-            st.markdown(
-                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
-                f'  <div style="text-align:center">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
-                f'  </div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    render_overview_default()
-    st.divider()
-
-    cutoff_ship_totals = {}
-    for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
-        dh_n = str(dr["dh_name"])
-        co   = dr["cutoff_display"]
-        ld   = all_dh_loads.get(dh_n, dict(bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0))
-        tot  = ld["bag_shipments"] + ld["semi_count"] + ld["tote_count"] + ld["secondary_count"]
-        cutoff_ship_totals[co] = cutoff_ship_totals.get(co, 0) + tot
-
-    cutoff_tbl = (
-        df_dh.groupby("cutoff_display")
-        .agg(DH_Count=("dh_name", "nunique"))
-        .reset_index()
-        .rename(columns={"cutoff_display": "Cutoff", "DH_Count": "# DHs"})
-        .sort_values("Cutoff")
-        .reset_index(drop=True)
-    )
-    cutoff_tbl["Total Shipment"] = cutoff_tbl["Cutoff"].map(cutoff_ship_totals).fillna(0).astype(int)
-
-    dh_h = 650
-
-    table_heading("🕐 Select Cutoff")
-    cutoff_options = [
-        f"{r['Cutoff']} — {r['Total Shipment']:,} pending"
-        for _, r in cutoff_tbl.iterrows()
-    ]
-    cutoff_label_to_value = dict(zip(cutoff_options, cutoff_tbl["Cutoff"]))
-
-    with st.form("cutoff_form", border=False):
-        cur_cutoff = st.session_state.sel_cutoffs[0] if st.session_state.sel_cutoffs else None
-        cur_label  = next((lbl for lbl, v in cutoff_label_to_value.items() if v == cur_cutoff), None)
-        chosen_label = st.selectbox(
-            "Cutoff (with pending load)",
-            cutoff_options,
-            index=cutoff_options.index(cur_label) if cur_label in cutoff_options else 0,
-        )
-        submitted_cut = st.form_submit_button("✅ Apply Cutoff", use_container_width=True)
-
-    if submitted_cut:
-        new_cutoffs = [cutoff_label_to_value[chosen_label]]
-        if new_cutoffs != st.session_state.sel_cutoffs:
-            st.session_state.sel_dh_names = []
-        st.session_state.sel_cutoffs = new_cutoffs
-
-    sel_cutoffs = st.session_state.sel_cutoffs
-
+def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
+    """
+    Per-DH breakdown (Bag/Semi/Totes/Total Shipment/Max Vehicle Size/
+    Recommended Vehicle/Utilization %) for every DH in dh_source_df — shared
+    by the main tab (cutoff-filtered) and the Ready to Dispatch tab (all DHs).
+    Returns (dh_summary_df, dh_loads_map).
+    """
+    dh_rows = []
     dh_loads_map = {}
-    dh_summary   = pd.DataFrame()
+    for _, dr in dh_source_df.drop_duplicates("dh_name").iterrows():
+        dh_n = str(dr["dh_name"])
+        ld   = all_dh_loads.get(dh_n, dict(bag_count=0, bag_shipments=0,
+                                           semi_count=0, tote_count=0, secondary_count=0))
+        dh_loads_map[dh_n] = ld
 
-    if not sel_cutoffs:
-        table_heading("🏭 DH Load Breakdown")
-        st.info("👆 Select a cutoff above and click **Apply** to see the DH breakdown.")
-    else:
-        filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
-        dh_rows = []
-        for _, dr in filt_dh.drop_duplicates("dh_name").iterrows():
-            dh_n = str(dr["dh_name"])
-            ld   = all_dh_loads.get(dh_n, dict(bag_count=0, bag_shipments=0,
-                                               semi_count=0, tote_count=0, secondary_count=0))
-            dh_loads_map[dh_n] = ld
+        sec_bags        = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
+        total_bags      = ld["bag_count"] + sec_bags
+        total_bag_ships = ld["bag_shipments"] + ld["secondary_count"]
+        total_ship_row  = total_bag_ships + ld["semi_count"] + ld["tote_count"]
 
-            sec_bags        = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
-            total_bags      = ld["bag_count"] + sec_bags
-            total_bag_ships = ld["bag_shipments"] + ld["secondary_count"]
-            total_ship_row  = total_bag_ships + ld["semi_count"] + ld["tote_count"]
+        merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
+                         tote_count=ld["tote_count"], secondary_count=0)
+        frac = load_to_frac(merged_ld)
 
-            merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
-                             tote_count=ld["tote_count"], secondary_count=0)
-            frac = load_to_frac(merged_ld)
+        max_v_str = dh_max_vehicle.get(_norm(dh_n))
+        dh_vcaps  = allowed_vcaps_for(max_v_str, vcaps)
+        rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(frac, dh_vcaps)
 
-            max_v_str  = dh_max_vehicle.get(_norm(dh_n))
-            dh_vcaps   = allowed_vcaps_for(max_v_str, vcaps)
-            rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(frac, dh_vcaps)
+        dh_rows.append({
+            "Cut Off":             dr["cutoff_display"],
+            "DH Code":             str(dr.get("dh_code", "")),
+            "DH Name":             dh_n,
+            "Bag":                 total_bags,
+            "Semi Large":          ld["semi_count"],
+            "Totes":               ld["tote_count"],
+            "Total Shipment":      total_ship_row,
+            "Max Vehicle Size":    max_v_str if max_v_str else "All vehicles",
+            "Recommended Vehicle": rec_v   if rec_v   else "—",
+            "Utilization %":       round(rec_util * 100, 1) if rec_v else 0.0,
+        })
 
-            dh_rows.append({
-                "Cut Off":             dr["cutoff_display"],
-                "DH Code":             str(dr.get("dh_code", "")),
-                "DH Name":             dh_n,
-                "Bag":                 total_bags,
-                "Semi Large":          ld["semi_count"],
-                "Totes":               ld["tote_count"],
-                "Total Shipment":      total_ship_row,
-                "Max Vehicle Size":    max_v_str if max_v_str else "All vehicles",
-                "Recommended Vehicle": rec_v   if rec_v   else "—",
-                "Utilization %":       round(rec_util * 100, 1) if rec_v else 0.0,
-            })
+    dh_summary = pd.DataFrame(dh_rows)
+    if not dh_summary.empty:
+        dh_summary = (
+            dh_summary[dh_summary["Total Shipment"] > 0]
+            .sort_values(["Cut Off", "DH Name"])
+            .reset_index(drop=True)
+        )
+        dh_summary["Status"] = dh_summary["Utilization %"].apply(_status_dot)
+    return dh_summary, dh_loads_map
 
-        dh_summary = pd.DataFrame(dh_rows)
-        if not dh_summary.empty:
-            dh_summary = (
-                dh_summary[dh_summary["Total Shipment"] > 0]
-                .sort_values(["Cut Off", "DH Name"])
-                .reset_index(drop=True)
-            )
-            dh_summary["Status"] = dh_summary["Utilization %"].apply(_status_dot)
 
-        table_heading(f"🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load")
+def agg_for(names, dh_loads_map):
+    """Aggregate raw per-DH loads for a list of DH names (secondary folded into bags)."""
+    a = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
+    for dh_n in names:
+        ld = dh_loads_map[dh_n]
+        sec_bags = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
+        a["bag_count"]     += ld["bag_count"] + sec_bags
+        a["bag_shipments"] += ld["bag_shipments"] + ld["secondary_count"]
+        a["semi_count"]    += ld["semi_count"]
+        a["tote_count"]    += ld["tote_count"]
+    return a
 
-        if dh_summary.empty:
-            st.success("✅ No pending floor load for any DH in the selected cutoff.")
-        else:
-            dh_styled = dh_summary.style.map(
-                _vehicle_badge_style, subset=["Recommended Vehicle"]
-            )
-            with st.form("dh_form", border=False):
-                submitted_dh = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
-                dh_evt = st.dataframe(
-                    dh_styled,
-                    on_select="rerun",
-                    selection_mode="multi-row",
-                    use_container_width=True,
-                    hide_index=True,
-                    height=dh_h,
-                    column_config={
-                        "Cut Off":             st.column_config.TextColumn(alignment="center"),
-                        "DH Code":             st.column_config.TextColumn(alignment="center"),
-                        "DH Name":             st.column_config.TextColumn(alignment="center"),
-                        "Bag":                 st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
-                        "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
-                        "Utilization %":       st.column_config.ProgressColumn(
-                            format="%.1f%%", min_value=0, max_value=100,
-                        ),
-                        "Status":              st.column_config.TextColumn(alignment="center", width="small"),
-                    },
-                )
 
-            if submitted_dh:
-                st.session_state.sel_dh_names = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
-
-    sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
-
-    def _agg_for(names):
-        a = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
-        for dh_n in names:
-            ld = dh_loads_map[dh_n]
-            sec_bags = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
-            a["bag_count"]     += ld["bag_count"] + sec_bags
-            a["bag_shipments"] += ld["bag_shipments"] + ld["secondary_count"]
-            a["semi_count"]    += ld["semi_count"]
-            a["tote_count"]    += ld["tote_count"]
-        return a
-
-    agg = _agg_for(sel_names)
+def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vcaps, max_cap):
+    """
+    Renders the combined Load Bifurcation + Recommended Vehicle prediction
+    card into main_box (an st.empty()) for the given selected DH names.
+    Shared by the main tab and the Ready to Dispatch tab.
+    """
+    agg = agg_for(sel_names, dh_loads_map)
     total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"]
     total_frac = load_to_frac(agg) if total_ship else 0.0
     req_equiv  = frac_to_equiv(total_frac, max_cap) if total_ship else 0
     best_v = best_cap = best_util = n_trucks = None
     truck_breakdown = []
 
+    # Selected DHs may have DIFFERENT max-permissible-vehicle constraints —
+    # the combined prediction is capped at the single most restrictive one.
     constrained_nums = [
         n for n in (
             _vehicle_size_num(dh_max_vehicle[_norm(dh_n)])
@@ -809,9 +667,9 @@ def main():
         if len(truck_breakdown) > 1:
             util_lines = ""
             for i, tb in enumerate(truck_breakdown, start=1):
-                pct      = round(tb["util_frac"] * 100, 1)
-                tb_col   = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
-                tb_real  = int(round(tb["capacity"] * ship_per_equiv))
+                pct     = round(tb["util_frac"] * 100, 1)
+                tb_col  = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
+                tb_real = int(round(tb["capacity"] * ship_per_equiv))
                 util_lines += (
                     f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
                     f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
@@ -855,7 +713,6 @@ def main():
         with main_box.container():
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
-                
                 f'<div style="flex:1;min-width:0">'
                 f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
                 f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
@@ -878,6 +735,230 @@ def main():
     elif sel_names:
         with main_box.container():
             st.success(f"✅ No pending floor load for {len(sel_names)} selected DH(s).")
+
+
+def main():
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
+
+    with st.spinner("Loading data"):
+        try:
+            raw  = load_sheets()
+            _key = tuple(sorted(raw.keys()))
+            df_bag, df_semi, df_tote, df_sec, vcaps, df_dh, dh_max_vehicle = parse(_key)
+        except Exception as e:
+            st.error(f"❌ Could not load sheet: {e}")
+            st.stop()
+
+    max_cap = max(c for _, c in vcaps)
+
+    with st.spinner("Computing DH loads…"):
+        all_dh_loads = compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh)
+
+    if df_dh.empty:
+        st.warning("⚠️ DH Name Cut-Off sheet not found.")
+        return
+
+    for k, v in [("sel_cutoffs", []), ("sel_dh_names", []), ("ready_sel_dh_names", [])]:
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    last_updated = _data_fetched_at(_key)
+    dh_h = 650
+
+    tab1, tab2 = st.tabs(["📊 Overview", "🚀 Ready to Dispatch DHs"])
+
+    # ── Tab 1: existing dashboard, unchanged ────────────────────────────────
+    with tab1:
+        # Fixed (not sticky — see CSS comment) so this stays pinned below the
+        # header while the cutoff dropdown / DH table scroll underneath it.
+        with st.container(key="pred_sticky"):
+            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
+            main_box = st.empty()
+        # Reserves the vertical space the fixed box occupies so content below
+        # doesn't render underneath/hidden by it.
+        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
+
+        with main_box.container():
+            bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
+            st.markdown(
+                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
+                f'  <div style="text-align:center">'
+                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
+                f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
+                f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
+                f'  </div>'
+                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
+                f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
+                f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
+                f'  </div>'
+                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
+                f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
+                f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
+                f'  </div>'
+                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
+                f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
+                f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
+                f'  </div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        st.divider()
+
+        cutoff_ship_totals = {}
+        for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
+            dh_n = str(dr["dh_name"])
+            co   = dr["cutoff_display"]
+            ld   = all_dh_loads.get(dh_n, dict(bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0))
+            tot  = ld["bag_shipments"] + ld["semi_count"] + ld["tote_count"] + ld["secondary_count"]
+            cutoff_ship_totals[co] = cutoff_ship_totals.get(co, 0) + tot
+
+        cutoff_tbl = (
+            df_dh.groupby("cutoff_display")
+            .agg(DH_Count=("dh_name", "nunique"))
+            .reset_index()
+            .rename(columns={"cutoff_display": "Cutoff", "DH_Count": "# DHs"})
+            .sort_values("Cutoff")
+            .reset_index(drop=True)
+        )
+        cutoff_tbl["Total Shipment"] = cutoff_tbl["Cutoff"].map(cutoff_ship_totals).fillna(0).astype(int)
+
+        table_heading("🕐 Select Cutoff")
+        cutoff_options = [
+            f"{r['Cutoff']} — {r['Total Shipment']:,} pending"
+            for _, r in cutoff_tbl.iterrows()
+        ]
+        cutoff_label_to_value = dict(zip(cutoff_options, cutoff_tbl["Cutoff"]))
+
+        with st.form("cutoff_form", border=False):
+            cur_cutoff = st.session_state.sel_cutoffs[0] if st.session_state.sel_cutoffs else None
+            cur_label  = next((lbl for lbl, v in cutoff_label_to_value.items() if v == cur_cutoff), None)
+            chosen_label = st.selectbox(
+                "Cutoff (with pending load)",
+                cutoff_options,
+                index=cutoff_options.index(cur_label) if cur_label in cutoff_options else 0,
+            )
+            submitted_cut = st.form_submit_button("✅ Apply Cutoff", use_container_width=True)
+
+        if submitted_cut:
+            new_cutoffs = [cutoff_label_to_value[chosen_label]]
+            if new_cutoffs != st.session_state.sel_cutoffs:
+                st.session_state.sel_dh_names = []
+            st.session_state.sel_cutoffs = new_cutoffs
+
+        sel_cutoffs = st.session_state.sel_cutoffs
+
+        dh_loads_map = {}
+        dh_summary   = pd.DataFrame()
+
+        if not sel_cutoffs:
+            table_heading("🏭 DH Load Breakdown")
+            st.info("👆 Select a cutoff above and click **Apply** to see the DH breakdown.")
+        else:
+            filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
+            dh_summary, dh_loads_map = build_dh_rows(filt_dh, all_dh_loads, dh_max_vehicle, vcaps)
+
+            table_heading(f"🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load")
+
+            if dh_summary.empty:
+                st.success("✅ No pending floor load for any DH in the selected cutoff.")
+            else:
+                dh_styled = dh_summary.style.map(
+                    _vehicle_badge_style, subset=["Recommended Vehicle"]
+                )
+                with st.form("dh_form", border=False):
+                    submitted_dh = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
+                    dh_evt = st.dataframe(
+                        dh_styled,
+                        on_select="rerun",
+                        selection_mode="multi-row",
+                        use_container_width=True,
+                        hide_index=True,
+                        height=dh_h,
+                        column_config={
+                            "Cut Off":             st.column_config.TextColumn(alignment="center"),
+                            "DH Code":             st.column_config.TextColumn(alignment="center"),
+                            "DH Name":             st.column_config.TextColumn(alignment="center"),
+                            "Bag":                 st.column_config.NumberColumn(alignment="center", format="%d"),
+                            "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
+                            "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
+                            "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
+                            "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
+                            "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
+                            "Utilization %":       st.column_config.ProgressColumn(
+                                format="%.1f%%", min_value=0, max_value=100,
+                            ),
+                            "Status":              st.column_config.TextColumn(alignment="center", width="small"),
+                        },
+                    )
+
+                if submitted_dh:
+                    st.session_state.sel_dh_names = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
+
+        sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
+        render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vcaps, max_cap)
+
+    # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
+    with tab2:
+        with st.container(key="ready_pred_sticky"):
+            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
+            ready_main_box = st.empty()
+        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
+
+        ready_summary_all, ready_loads_map = build_dh_rows(df_dh, all_dh_loads, dh_max_vehicle, vcaps)
+        ready_summary = (
+            ready_summary_all[ready_summary_all["Utilization %"] > 70]
+            .sort_values("Utilization %", ascending=False)
+            .reset_index(drop=True)
+            if not ready_summary_all.empty else ready_summary_all
+        )
+
+        table_heading(f"🚀 Ready to Dispatch DHs — {len(ready_summary)} DH(s) over 70% utilization")
+
+        ready_sel_names = []
+        if ready_summary.empty:
+            st.info("No DHs currently have a recommended-vehicle utilization above 70%.")
+        else:
+            ready_styled = ready_summary.style.map(
+                _vehicle_badge_style, subset=["Recommended Vehicle"]
+            )
+            with st.form("ready_dh_form", border=False):
+                ready_submitted = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
+                ready_evt = st.dataframe(
+                    ready_styled,
+                    on_select="rerun",
+                    selection_mode="multi-row",
+                    use_container_width=True,
+                    hide_index=True,
+                    height=dh_h,
+                    column_config={
+                        "Cut Off":             st.column_config.TextColumn(alignment="center"),
+                        "DH Code":             st.column_config.TextColumn(alignment="center"),
+                        "DH Name":             st.column_config.TextColumn(alignment="center"),
+                        "Bag":                 st.column_config.NumberColumn(alignment="center", format="%d"),
+                        "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
+                        "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
+                        "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
+                        "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
+                        "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
+                        "Utilization %":       st.column_config.ProgressColumn(
+                            format="%.1f%%", min_value=0, max_value=100,
+                        ),
+                        "Status":              st.column_config.TextColumn(alignment="center", width="small"),
+                    },
+                )
+
+            if ready_submitted:
+                st.session_state.ready_sel_dh_names = [ready_summary.iloc[i]["DH Name"] for i in ready_evt.selection.rows]
+
+            ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
+
+        render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, dh_max_vehicle, vcaps, max_cap)
 
 
 def render_about_credits():
