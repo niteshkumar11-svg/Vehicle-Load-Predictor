@@ -54,8 +54,10 @@ st.set_page_config(
     page_title="🚛 Vehicle Load Predictor | Hajipur MH",
     layout="wide",
     page_icon="🚛",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
+
+SIDEBAR_WIDTH_PX = 190
 
 st.markdown("""
 <style>
@@ -68,9 +70,14 @@ st.markdown("""
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='200'%3E%3Ctext x='20' y='110' font-family='Arial,sans-serif' font-size='36' font-weight='800' fill='rgba(30,41,59,0.025)' transform='rotate(-30 130 100)'%3EN K%3C/text%3E%3C/svg%3E");
     background-repeat:repeat;
 }
-/* Sidebar removed — header only */
-section[data-testid="stSidebar"]{display:none!important}
-div[data-testid="collapsedControl"]{display:none!important}
+/* Sidebar: narrow, always-expanded nav rail holding just the two tab
+   buttons — no collapse arrow, fixed minimum width so it doesn't eat
+   dashboard space. */
+section[data-testid="stSidebar"]{
+    width:190px!important; min-width:190px!important; max-width:190px!important;
+}
+button[data-testid="stSidebarCollapseButton"]{display:none!important}
+div[data-testid="stSidebarResizeHandle"]{display:none!important}
 /* Reduce the default top padding Streamlit adds below the sticky header */
 div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!important}
 /* Combined Prediction box + Selected DHs pinned to the top while scrolling.
@@ -80,24 +87,19 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!importan
    the wrapper's height always equals its child's height, so there's no
    scrollable range for sticky to hold position against). Using
    position:fixed instead, which is proven to work in this app already
-   (header credit, Refresh button). left/right approximate Streamlit's wide
-   layout side padding — tweak if it doesn't line up with the tables below. */
-/* top is pushed below BOTH the sticky app header (56px) AND the st.tabs()
-   pill bar that now sits above this box — otherwise the opaque box (it
-   needs a high z-index to stay above scrolling content) renders on top of
-   and hides the tab bar. */
+   (header credit, Refresh button). left is offset past the sidebar's
+   width so the box doesn't render on top of/underneath it. */
 .st-key-pred_sticky, .st-key-ready_pred_sticky{
-    position:fixed!important; top:128px!important; left:24px!important; right:24px!important;
-    width:calc(100vw - 48px)!important; max-width:calc(100vw - 48px)!important;
+    position:fixed!important; top:80px!important; left:214px!important; right:24px!important;
+    width:calc(100vw - 238px)!important; max-width:calc(100vw - 238px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
     z-index:500; background:#f0f2f6; padding-bottom:10px;
 }
-div[data-testid="stTabs"]{position:relative; z-index:600}
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:236px}
+.pred-sticky-spacer{height:180px}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:316px}
+    .pred-sticky-spacer{height:260px}
 }
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
@@ -138,18 +140,24 @@ header[data-testid="stHeader"]::before{
     .dev-credit{display:none}
 }
 
-/* Refresh Data button — rendered in normal flow, visually pinned into the
-   left side of the sticky header instead, and its original slot collapsed
-   so it doesn't leave empty space above the page content. */
-div[data-testid="stButton"]{
+/* Refresh Data button ONLY (scoped via key so this doesn't hijack the
+   sidebar nav buttons, which also render as stButton) — rendered in
+   normal flow, visually pinned into the left side of the sticky header
+   instead, and its original slot collapsed so it doesn't leave empty
+   space above the page content. */
+.st-key-refresh_btn{
     position:fixed; top:8px; left:68px; z-index:1000000; width:auto!important;
     margin:0!important; padding:0!important; min-height:0!important;
 }
-div[data-testid="stButton"] button{
+.st-key-refresh_btn button{
     padding:4px 14px!important; font-size:13px!important;
 }
-div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stButton"]){
+div[data-testid="stVerticalBlock"] > div:has(> .st-key-refresh_btn){
     margin:0!important; padding:0!important; min-height:0!important; height:0!important;
+}
+/* Sidebar nav buttons: full width, minimal gap between the two */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button{
+    font-size:13px!important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -743,7 +751,7 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
 
 
 def main():
-    if st.button("🔄 Refresh Data"):
+    if st.button("🔄 Refresh Data", key="refresh_btn"):
         st.cache_data.clear()
         st.rerun()
 
@@ -772,10 +780,23 @@ def main():
     last_updated = _data_fetched_at(_key)
     dh_h = 650
 
-    tab1, tab2 = st.tabs(["📊 Overview", "🚀 Ready to Dispatch DHs"])
+    if "active_tab" not in st.session_state:
+        st.session_state.active_tab = "overview"
+
+    with st.sidebar:
+        if st.button(
+            "📊 Overview", use_container_width=True,
+            type="primary" if st.session_state.active_tab == "overview" else "secondary",
+        ):
+            st.session_state.active_tab = "overview"
+        if st.button(
+            "🚀 Ready to Dispatch", use_container_width=True,
+            type="primary" if st.session_state.active_tab == "ready" else "secondary",
+        ):
+            st.session_state.active_tab = "ready"
 
     # ── Tab 1: existing dashboard, unchanged ────────────────────────────────
-    with tab1:
+    if st.session_state.active_tab == "overview":
         # Fixed (not sticky — see CSS comment) so this stays pinned below the
         # header while the cutoff dropdown / DH table scroll underneath it.
         with st.container(key="pred_sticky"):
@@ -909,7 +930,7 @@ def main():
         render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vcaps, max_cap)
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
-    with tab2:
+    else:
         with st.container(key="ready_pred_sticky"):
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             ready_main_box = st.empty()
