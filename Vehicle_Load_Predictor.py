@@ -83,11 +83,10 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!importan
    (header credit, Refresh button). left/right approximate Streamlit's wide
    layout side padding — tweak if it doesn't line up with the tables below. */
 .st-key-pred_sticky{
-    position:fixed; top:72px; left:80px; right:80px; z-index:500;
-    background:#f0f2f6; padding-bottom:10px;
-}
-@media (max-width:900px){
-    .st-key-pred_sticky{left:16px; right:16px}
+    position:fixed!important; top:72px!important; left:24px!important; right:24px!important;
+    width:calc(100vw - 48px)!important; max-width:calc(100vw - 48px)!important;
+    flex:none!important; box-sizing:border-box!important; overflow-x:auto;
+    z-index:500; background:#f0f2f6; padding-bottom:10px;
 }
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
