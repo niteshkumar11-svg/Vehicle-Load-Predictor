@@ -82,17 +82,22 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!importan
    position:fixed instead, which is proven to work in this app already
    (header credit, Refresh button). left/right approximate Streamlit's wide
    layout side padding — tweak if it doesn't line up with the tables below. */
+/* top is pushed below BOTH the sticky app header (56px) AND the st.tabs()
+   pill bar that now sits above this box — otherwise the opaque box (it
+   needs a high z-index to stay above scrolling content) renders on top of
+   and hides the tab bar. */
 .st-key-pred_sticky, .st-key-ready_pred_sticky{
-    position:fixed!important; top:72px!important; left:24px!important; right:24px!important;
+    position:fixed!important; top:128px!important; left:24px!important; right:24px!important;
     width:calc(100vw - 48px)!important; max-width:calc(100vw - 48px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
     z-index:500; background:#f0f2f6; padding-bottom:10px;
 }
+div[data-testid="stTabs"]{position:relative; z-index:600}
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:180px}
+.pred-sticky-spacer{height:236px}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:260px}
+    .pred-sticky-spacer{height:316px}
 }
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
