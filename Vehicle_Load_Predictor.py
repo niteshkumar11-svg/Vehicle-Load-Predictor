@@ -777,15 +777,6 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
 
         # CFT breakdown line (bags × CFT/bag + semi × CFT/semi + totes × CFT/tote)
         bags = agg["bag_shipments"] / SHIPMENTS_PER_BAG
-        cft_bags  = bags                    * CFT_PER_BAG
-        cft_semi  = agg["semi_count"]       * CFT_PER_SEMI
-        cft_totes = agg["tote_count"]       * CFT_PER_TOTE
-        cft_formula = (
-            f'({bags:.0f} bags×{CFT_PER_BAG:.2f}) + ({agg["semi_count"]}×{CFT_PER_SEMI:.2f}) + ({agg["tote_count"]}×{CFT_PER_TOTE:.2f})'
-            f' = <b>{total_cft:,.1f} CFT</b> &nbsp;÷&nbsp; <b>{veh_cft_str} CFT</b> vehicle'
-            f' = <b style="color:{conf_col}">{util_pct}%</b>'
-        )
-
         with main_box.container():
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
@@ -795,9 +786,6 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
                 f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
                 f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
                 f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
-                f'  </div>'
-                f'  <div style="font-size:11px;opacity:.6;margin-top:8px;font-style:italic">'
-                f'    📐 CFT: {cft_formula}'
                 f'  </div>'
                 f'</div>'
                 f'{right_html}'
