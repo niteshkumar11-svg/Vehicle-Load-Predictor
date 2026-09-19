@@ -139,9 +139,9 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
 }
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:300px; margin:0!important; padding:0!important}
+.pred-sticky-spacer{height:255px; margin:0!important; padding:0!important}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:400px}
+    .pred-sticky-spacer{height:355px}
 }
 /* Kill the default gap Streamlit adds between block elements after the spacer */
 div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer) + div{
@@ -989,8 +989,11 @@ def main():
                 height=dh_h,
                 column_config=DH_COL_CFG,
             )
-            # Update selection immediately on every rerun (on_select="rerun" triggers this)
-            st.session_state.sel_dh_names = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
+            # Sync selection; if it changed, rerun so the sidebar renders with the updated list
+            new_dh_sel = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
+            if new_dh_sel != st.session_state.sel_dh_names:
+                st.session_state.sel_dh_names = new_dh_sel
+                st.rerun()
         elif sel_cutoffs and dh_summary.empty:
             st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
@@ -1032,8 +1035,10 @@ def main():
                 height=dh_h,
                 column_config=DH_COL_CFG,
             )
-            # Update selection immediately on every rerun
-            st.session_state.ready_sel_dh_names = [ready_summary.iloc[i]["DH Name"] for i in ready_evt.selection.rows]
+            new_ready_sel = [ready_summary.iloc[i]["DH Name"] for i in ready_evt.selection.rows]
+            if new_ready_sel != st.session_state.ready_sel_dh_names:
+                st.session_state.ready_sel_dh_names = new_ready_sel
+                st.rerun()
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
 
         render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, dh_max_vehicle, vcaps, max_cap)
