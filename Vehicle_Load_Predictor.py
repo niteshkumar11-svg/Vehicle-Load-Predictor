@@ -31,44 +31,63 @@ GSHEETS_SCOPES = [
 ]
 
 # ── CFT-based load model ────────────────────────────────────────────────────
-# Vehicle dimensions: breadth = 6.5 ft, height = 13.5 ft (fixed across all sizes).
-# CFT = length × 6.5 × 13.5
-VEHICLE_BREADTH_FT = 6.5
-VEHICLE_HEIGHT_FT  = 13.5
-
-def _vehicle_cft(length_ft: float) -> float:
-    return length_ft * VEHICLE_BREADTH_FT * VEHICLE_HEIGHT_FT
-
-# CFT consumed by each load unit (derived from 32Ft baseline = 2,808 CFT):
-#   32Ft CFT = 32 × 6.5 × 13.5 = 2,808
-#   Bags (in 32Ft) = 17,000 shipments / 30 per bag = 566.67 bags → CFT/bag = 2808/566.67 ≈ 4.953
-#   Semi-large (in 32Ft) = 1,800 → CFT/semi = 2808/1800 ≈ 1.56
-#   Totes (in 32Ft) = 650 → CFT/tote = 2808/650 ≈ 4.32
-#   Secondary (in 32Ft) = 14,235 → CFT/secondary = 2808/14235 ≈ 0.1972
+# Each vehicle type has distinct average internal dimensions (from standard specs).
+# CFT = length × breadth × height  (internal cargo body dimensions)
+# Using midpoint of breadth/height ranges where a range is given.
 SHIPMENTS_PER_BAG  = 30
-_32FT_CFT          = _vehicle_cft(32)        # 2,808 CFT
+
+# Per-vehicle CFT (L × B_mid × H_mid):
+#   6.5Ft: 6.5 × 4.65 × 4.75 = 143.5      8Ft: 8 × 5.0 × 5.25 = 210.0 (estimated)
+#   10Ft:  10 × 5.75 × 5.75 = 330.6       14Ft: 14 × 6.0 × 6.25 = 525.0
+#   17Ft:  17 × 6.5 × 6.75 = 745.9        20Ft: 20 × 7.5 × 7.5 = 1125.0
+#   22Ft:  22 × 7.5 × 7.5 = 1237.5        24Ft: 24 × 7.75 × 7.75 = 1441.5
+#   32Ft:  32 × 8.0 × 9.0 = 2304.0
+_VEHICLE_CFT_MAP = {
+    "6.5 Ft": 6.5  * 4.65 * 4.75,   # 143.5
+    "8 Ft":   8.0  * 5.0  * 5.25,   # 210.0
+    "10 Ft":  10.0 * 5.75 * 5.75,   # 330.6
+    "14 Ft":  14.0 * 6.0  * 6.25,   # 525.0
+    "17 Ft":  17.0 * 6.5  * 6.75,   # 745.9
+    "20 Ft":  20.0 * 7.5  * 7.5,    # 1125.0
+    "22 Ft":  22.0 * 7.5  * 7.5,    # 1237.5
+    "24 Ft":  24.0 * 7.75 * 7.75,   # 1441.5
+    "32 Ft":  32.0 * 8.0  * 9.0,    # 2304.0
+}
+
+def _vehicle_cft(vehicle_label: str) -> float:
+    """Return CFT for a vehicle label, falling back to name-number × 8 × 9 estimate."""
+    if vehicle_label in _VEHICLE_CFT_MAP:
+        return _VEHICLE_CFT_MAP[vehicle_label]
+    m = __import__("re").search(r"(\d+(?:\.\d+)?)", str(vehicle_label))
+    return float(m.group(1)) * 8.0 * 9.0 if m else 1.0
+
+# Per-unit CFT derived from 32 Ft baseline (2,304 CFT):
+#   Bags per 32Ft = 17,000 ships / 30 per bag = 566.7 bags  → CFT/bag = 2304/566.7 ≈ 4.07
+#   Semi per 32Ft = 1,800                                    → CFT/semi = 2304/1800 ≈ 1.28
+#   Totes per 32Ft = 650                                     → CFT/tote = 2304/650 ≈ 3.54
+#   Secondary per 32Ft = 14,235                              → CFT/sec = 2304/14235 ≈ 0.162
 BAG_SHIPMENTS_32FT = 17_000
 SEMI_32FT          = 1_800
 TOTES_32FT         = 650
 SECONDARY_32FT     = 14_235
 
-CFT_PER_BAG        = _32FT_CFT / (BAG_SHIPMENTS_32FT / SHIPMENTS_PER_BAG)   # ≈ 4.953
-CFT_PER_SEMI       = _32FT_CFT / SEMI_32FT                                   # ≈ 1.56
-CFT_PER_TOTE       = _32FT_CFT / TOTES_32FT                                  # ≈ 4.32
-CFT_PER_SECONDARY  = _32FT_CFT / SECONDARY_32FT                              # ≈ 0.197
+_32FT_CFT         = _VEHICLE_CFT_MAP["32 Ft"]                               # 2,304 CFT
+CFT_PER_BAG       = _32FT_CFT / (BAG_SHIPMENTS_32FT / SHIPMENTS_PER_BAG)    # ≈ 4.07
+CFT_PER_SEMI      = _32FT_CFT / SEMI_32FT                                    # ≈ 1.28
+CFT_PER_TOTE      = _32FT_CFT / TOTES_32FT                                   # ≈ 3.54
+CFT_PER_SECONDARY = _32FT_CFT / SECONDARY_32FT                               # ≈ 0.162
 
-# Vehicle capacities expressed in CFT (length × 6.5 × 13.5).
-# Replacing the old arbitrary shipment-equivalent counts.
+# Vehicle capacities in CFT — each vehicle uses its own real dimensions.
 DEFAULT_VEHICLE_CAPS = [
-    ("6.5 Ft",  _vehicle_cft(6.5)),   # 570.2  CFT
-    ("8 Ft",    _vehicle_cft(8)),      # 702.0  CFT
-    ("10 Ft",   _vehicle_cft(10)),     # 877.5  CFT
-    ("14 Ft",   _vehicle_cft(14)),     # 1,228.5 CFT
-    ("17 Ft",   _vehicle_cft(17)),     # 1,491.8 CFT
-    ("20 Ft",   _vehicle_cft(20)),     # 1,755.0 CFT
-    ("22 Ft",   _vehicle_cft(22)),     # 1,930.5 CFT
-    ("24 Ft",   _vehicle_cft(24)),     # 2,106.0 CFT
-    ("32 Ft",   _vehicle_cft(32)),     # 2,808.0 CFT
+    ("6.5 Ft", _VEHICLE_CFT_MAP["6.5 Ft"]),   # 143.5 CFT
+    ("8 Ft",   _VEHICLE_CFT_MAP["8 Ft"]),      # 210.0 CFT
+    ("10 Ft",  _VEHICLE_CFT_MAP["10 Ft"]),     # 330.6 CFT
+    ("14 Ft",  _VEHICLE_CFT_MAP["14 Ft"]),     # 525.0 CFT
+    ("17 Ft",  _VEHICLE_CFT_MAP["17 Ft"]),     # 745.9 CFT
+    ("20 Ft",  _VEHICLE_CFT_MAP["20 Ft"]),     # 1,125.0 CFT
+    ("22 Ft",  _VEHICLE_CFT_MAP["22 Ft"]),     # 1,237.5 CFT
+    ("24 Ft",  _VEHICLE_CFT_MAP["24 Ft"]),     # 1,441.5 CFT
+    ("32 Ft",  _VEHICLE_CFT_MAP["32 Ft"]),     # 2,304.0 CFT
 ]
 
 TARGET_UTIL = 1.00   
