@@ -924,32 +924,35 @@ def main():
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             main_box = st.empty()
 
+            # Default content of main_box: KPI overview cards.
+            # render_prediction_box() replaces this when DHs are selected.
             bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
-            st.markdown(
-                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
-                f'  <div style="text-align:center">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
-                f'  </div>'
-                f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
-                f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
-                f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
-                f'  </div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            with main_box.container():
+                st.markdown(
+                    f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
+                    f'  <div style="text-align:center">'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
+                    f'  </div>'
+                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
+                    f'  </div>'
+                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
+                    f'  </div>'
+                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
+                    f'  </div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
             st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
 
