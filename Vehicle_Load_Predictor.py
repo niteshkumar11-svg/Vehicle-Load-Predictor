@@ -139,9 +139,9 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
 }
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:180px}
+.pred-sticky-spacer{height:320px}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:260px}
+    .pred-sticky-spacer{height:420px}
 }
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
@@ -188,8 +188,12 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button{
 }
 /* Sidebar section label */
 .sidebar-section-label{
-    font-size:11px; font-weight:700; text-transform:uppercase;
+    font-size:13px; font-weight:700; text-transform:uppercase;
     letter-spacing:.7px; color:#64748b; margin:12px 0 6px 2px;
+}
+/* Cutoff checkboxes: larger label text */
+section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
+    font-size:14px!important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -890,18 +894,36 @@ def main():
             st.session_state.sel_cutoffs = new_sel
             st.rerun()
 
-    # ── Tab 1: existing dashboard, unchanged ────────────────────────────────
+    DH_COL_CFG = {
+        "Cut Off":             st.column_config.TextColumn(alignment="center"),
+        "DH Code":             st.column_config.TextColumn(alignment="center"),
+        "DH Name":             st.column_config.TextColumn(alignment="center"),
+        "Bag":                 st.column_config.NumberColumn(alignment="center", format="%d"),
+        "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
+        "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
+        "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
+        "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
+        "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
+        "Utilization %":       st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+    }
+
+    # ── Tab 1: Overview ─────────────────────────────────────────────────────
     if st.session_state.active_tab == "overview":
-        # Fixed (not sticky — see CSS comment) so this stays pinned below the
-        # header while the cutoff dropdown / DH table scroll underneath it.
+        sel_cutoffs  = st.session_state.sel_cutoffs
+        dh_loads_map = {}
+        dh_summary   = pd.DataFrame()
+        submitted_dh = False
+        dh_evt       = None
+
+        if sel_cutoffs:
+            filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
+            dh_summary, dh_loads_map = build_dh_rows(filt_dh, all_dh_loads, dh_max_vehicle, vcaps)
+
+        # Everything above the table is in the fixed container ──────────────
         with st.container(key="pred_sticky"):
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             main_box = st.empty()
-        # Reserves the vertical space the fixed box occupies so content below
-        # doesn't render underneath/hidden by it.
-        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
 
-        with main_box.container():
             bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
@@ -929,65 +951,49 @@ def main():
                 unsafe_allow_html=True,
             )
 
-        st.divider()
+            st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
 
-        sel_cutoffs  = st.session_state.sel_cutoffs
-        dh_loads_map = {}
-        dh_summary   = pd.DataFrame()
-
-        if not sel_cutoffs:
-            table_heading("🏭 DH Load Breakdown")
-            st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
-        else:
-            filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
-            dh_summary, dh_loads_map = build_dh_rows(filt_dh, all_dh_loads, dh_max_vehicle, vcaps)
-
-            table_heading(f"🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load")
-
-            if dh_summary.empty:
-                st.success("✅ No pending floor load for any DH in the selected cutoff.")
-            else:
-                dh_styled = dh_summary.style.map(
-                    _vehicle_badge_style, subset=["Recommended Vehicle"]
+            if not sel_cutoffs:
+                st.markdown(
+                    '<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🏭 DH Load Breakdown</div>',
+                    unsafe_allow_html=True,
                 )
-                with st.form("dh_form", border=False):
-                    submitted_dh = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
-                    dh_evt = st.dataframe(
-                        dh_styled,
-                        on_select="rerun",
-                        selection_mode="multi-row",
-                        use_container_width=True,
-                        hide_index=True,
-                        height=dh_h,
-                        column_config={
-                            "Cut Off":             st.column_config.TextColumn(alignment="center"),
-                            "DH Code":             st.column_config.TextColumn(alignment="center"),
-                            "DH Name":             st.column_config.TextColumn(alignment="center"),
-                            "Bag":                 st.column_config.NumberColumn(alignment="center", format="%d"),
-                            "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
-                            "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
-                            "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
-                            "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
-                            "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
-                            "Utilization %":       st.column_config.ProgressColumn(
-                                format="%.1f%%", min_value=0, max_value=100,
-                            ),
-                        },
-                    )
+                st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
+            else:
+                n_dh = len(dh_summary)
+                st.markdown(
+                    f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🏭 DH Load Breakdown — {n_dh} DH(s) with pending load</div>',
+                    unsafe_allow_html=True,
+                )
+                if not dh_summary.empty:
+                    with st.form("dh_form", border=False):
+                        submitted_dh = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
 
-                if submitted_dh:
-                    st.session_state.sel_dh_names = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
+        # Spacer reserves space for the entire fixed block above ─────────────
+        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
+
+        # Only the dataframe scrolls in normal flow ──────────────────────────
+        if sel_cutoffs and not dh_summary.empty:
+            dh_styled = dh_summary.style.map(_vehicle_badge_style, subset=["Recommended Vehicle"])
+            dh_evt = st.dataframe(
+                dh_styled,
+                on_select="rerun",
+                selection_mode="multi-row",
+                use_container_width=True,
+                hide_index=True,
+                height=dh_h,
+                column_config=DH_COL_CFG,
+            )
+            if submitted_dh and dh_evt is not None:
+                st.session_state.sel_dh_names = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
+        elif sel_cutoffs and dh_summary.empty:
+            st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
         sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
         render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vcaps, max_cap)
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
     else:
-        with st.container(key="ready_pred_sticky"):
-            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
-            ready_main_box = st.empty()
-        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
-
         ready_summary_all, ready_loads_map = build_dh_rows(df_dh, all_dh_loads, dh_max_vehicle, vcaps)
         ready_summary = (
             ready_summary_all[ready_summary_all["Utilization %"] > 70]
@@ -995,43 +1001,39 @@ def main():
             .reset_index(drop=True)
             if not ready_summary_all.empty else ready_summary_all
         )
+        ready_submitted = False
+        ready_evt       = None
 
-        table_heading(f"🚀 Ready to Dispatch DHs — {len(ready_summary)} DH(s) over 70% utilization")
+        with st.container(key="ready_pred_sticky"):
+            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
+            ready_main_box = st.empty()
+            st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
+            n_ready = len(ready_summary)
+            st.markdown(
+                f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🚀 Ready to Dispatch DHs — {n_ready} DH(s) over 70% utilization</div>',
+                unsafe_allow_html=True,
+            )
+            if not ready_summary.empty:
+                with st.form("ready_dh_form", border=False):
+                    ready_submitted = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
+
+        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
 
         ready_sel_names = []
         if ready_summary.empty:
             st.info("No DHs currently have a recommended-vehicle utilization above 70%.")
         else:
-            ready_styled = ready_summary.style.map(
-                _vehicle_badge_style, subset=["Recommended Vehicle"]
+            ready_styled = ready_summary.style.map(_vehicle_badge_style, subset=["Recommended Vehicle"])
+            ready_evt = st.dataframe(
+                ready_styled,
+                on_select="rerun",
+                selection_mode="multi-row",
+                use_container_width=True,
+                hide_index=True,
+                height=dh_h,
+                column_config=DH_COL_CFG,
             )
-            with st.form("ready_dh_form", border=False):
-                ready_submitted = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
-                ready_evt = st.dataframe(
-                    ready_styled,
-                    on_select="rerun",
-                    selection_mode="multi-row",
-                    use_container_width=True,
-                    hide_index=True,
-                    height=dh_h,
-                    column_config={
-                        "Cut Off":             st.column_config.TextColumn(alignment="center"),
-                        "DH Code":             st.column_config.TextColumn(alignment="center"),
-                        "DH Name":             st.column_config.TextColumn(alignment="center"),
-                        "Bag":                 st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Semi Large":          st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
-                        "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
-                        "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
-                        "Utilization %":       st.column_config.ProgressColumn(
-                            format="%.1f%%", min_value=0, max_value=100,
-                        ),
-                        "Status":              st.column_config.TextColumn(alignment="center", width="small"),
-                    },
-                )
-
-            if ready_submitted:
+            if ready_submitted and ready_evt is not None:
                 st.session_state.ready_sel_dh_names = [ready_summary.iloc[i]["DH Name"] for i in ready_evt.selection.rows]
 
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
