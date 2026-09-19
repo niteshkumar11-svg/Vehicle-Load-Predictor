@@ -139,9 +139,9 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
 }
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:320px}
+.pred-sticky-spacer{height:370px}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:420px}
+    .pred-sticky-spacer{height:470px}
 }
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
@@ -800,13 +800,6 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            st.markdown(f"#### Selected DHs ({len(sel_names)})")
-            chips = "".join(
-                f'<span style="display:inline-block;background:#eef2ff;color:#3730a3;'
-                f'border-radius:6px;padding:3px 10px;margin:4px 4px 0 0;font-size:12px;font-weight:600">{n}</span>'
-                for n in sel_names
-            )
-            st.markdown(f'<div style="line-height:2.2">{chips}</div>', unsafe_allow_html=True)
     elif sel_names:
         with main_box.container():
             st.success(f"✅ No pending floor load for {len(sel_names)} selected DH(s).")
@@ -875,6 +868,17 @@ def main():
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+
+        # Selected DHs — shown above cutoff section when any DH is selected
+        active_sel = st.session_state.get("sel_dh_names", []) if st.session_state.active_tab == "overview" else st.session_state.get("ready_sel_dh_names", [])
+        if active_sel:
+            st.markdown('<div class="sidebar-section-label">✅ Selected DHs</div>', unsafe_allow_html=True)
+            chips_html = "".join(
+                f'<div style="background:#eef2ff;color:#3730a3;border-radius:6px;'
+                f'padding:4px 8px;margin:3px 0;font-size:12px;font-weight:600;word-break:break-word">{n}</div>'
+                for n in active_sel
+            )
+            st.markdown(chips_html, unsafe_allow_html=True)
 
         st.markdown('<div class="sidebar-section-label">🕐 Select Cutoff</div>', unsafe_allow_html=True)
         new_sel = []
