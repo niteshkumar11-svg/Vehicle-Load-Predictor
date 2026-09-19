@@ -186,6 +186,17 @@ def _df(vals, hdr=0):
     if len(vals) <= hdr:
         return pd.DataFrame()
     heads = [str(h).strip() for h in vals[hdr]]
+    # Deduplicate column names to prevent d[[col]] returning a multi-column DataFrame
+    seen: dict = {}
+    deduped = []
+    for h in heads:
+        if h in seen:
+            seen[h] += 1
+            deduped.append(f"{h}_{seen[h]}")
+        else:
+            seen[h] = 0
+            deduped.append(h)
+    heads = deduped
     rows  = vals[hdr+1:]
     n = len(heads)
     rows = [r[:n] + [""] * max(0, n-len(r)) for r in rows]
