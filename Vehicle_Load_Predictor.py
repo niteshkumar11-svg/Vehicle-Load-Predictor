@@ -30,22 +30,45 @@ GSHEETS_SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-BAG_SHIPMENTS_32FT = 17_000   
-SEMI_32FT          = 1_800    
-TOTES_32FT         = 650      
-SECONDARY_32FT     = 14_235   
-SHIPMENTS_PER_BAG  = 30
+# ── CFT-based load model ────────────────────────────────────────────────────
+# Vehicle dimensions: breadth = 6.5 ft, height = 13.5 ft (fixed across all sizes).
+# CFT = length × 6.5 × 13.5
+VEHICLE_BREADTH_FT = 6.5
+VEHICLE_HEIGHT_FT  = 13.5
 
+def _vehicle_cft(length_ft: float) -> float:
+    return length_ft * VEHICLE_BREADTH_FT * VEHICLE_HEIGHT_FT
+
+# CFT consumed by each load unit (derived from 32Ft baseline = 2,808 CFT):
+#   32Ft CFT = 32 × 6.5 × 13.5 = 2,808
+#   Bags (in 32Ft) = 17,000 shipments / 30 per bag = 566.67 bags → CFT/bag = 2808/566.67 ≈ 4.953
+#   Semi-large (in 32Ft) = 1,800 → CFT/semi = 2808/1800 ≈ 1.56
+#   Totes (in 32Ft) = 650 → CFT/tote = 2808/650 ≈ 4.32
+#   Secondary (in 32Ft) = 14,235 → CFT/secondary = 2808/14235 ≈ 0.1972
+SHIPMENTS_PER_BAG  = 30
+_32FT_CFT          = _vehicle_cft(32)        # 2,808 CFT
+BAG_SHIPMENTS_32FT = 17_000
+SEMI_32FT          = 1_800
+TOTES_32FT         = 650
+SECONDARY_32FT     = 14_235
+
+CFT_PER_BAG        = _32FT_CFT / (BAG_SHIPMENTS_32FT / SHIPMENTS_PER_BAG)   # ≈ 4.953
+CFT_PER_SEMI       = _32FT_CFT / SEMI_32FT                                   # ≈ 1.56
+CFT_PER_TOTE       = _32FT_CFT / TOTES_32FT                                  # ≈ 4.32
+CFT_PER_SECONDARY  = _32FT_CFT / SECONDARY_32FT                              # ≈ 0.197
+
+# Vehicle capacities expressed in CFT (length × 6.5 × 13.5).
+# Replacing the old arbitrary shipment-equivalent counts.
 DEFAULT_VEHICLE_CAPS = [
-    ("6.5 Ft",  800),
-    ("8 Ft",   1_384),
-    ("10 Ft",  2_051),
-    ("14 Ft",  2_807),
-    ("17 Ft",  3_359),
-    ("20 Ft",  5_087),
-    ("22 Ft",  5_865),
-    ("24 Ft",  6_300),
-    ("32 Ft", 14_235),
+    ("6.5 Ft",  _vehicle_cft(6.5)),   # 570.2  CFT
+    ("8 Ft",    _vehicle_cft(8)),      # 702.0  CFT
+    ("10 Ft",   _vehicle_cft(10)),     # 877.5  CFT
+    ("14 Ft",   _vehicle_cft(14)),     # 1,228.5 CFT
+    ("17 Ft",   _vehicle_cft(17)),     # 1,491.8 CFT
+    ("20 Ft",   _vehicle_cft(20)),     # 1,755.0 CFT
+    ("22 Ft",   _vehicle_cft(22)),     # 1,930.5 CFT
+    ("24 Ft",   _vehicle_cft(24)),     # 2,106.0 CFT
+    ("32 Ft",   _vehicle_cft(32)),     # 2,808.0 CFT
 ]
 
 TARGET_UTIL = 1.00   
@@ -416,16 +439,22 @@ def compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh):
     return result
 
 
-def load_to_frac(load):
+def load_to_cft(load) -> float:
+    """Total CFT consumed by a load dict."""
+    bags = load["bag_shipments"] / SHIPMENTS_PER_BAG
     return (
-        load["bag_shipments"] / BAG_SHIPMENTS_32FT
-        + load["semi_count"]  / SEMI_32FT
-        + load["tote_count"]  / TOTES_32FT
-        + load["secondary_count"] / SECONDARY_32FT
+        bags                    * CFT_PER_BAG
+        + load["semi_count"]    * CFT_PER_SEMI
+        + load["tote_count"]    * CFT_PER_TOTE
+        + load["secondary_count"] * CFT_PER_SECONDARY
     )
 
+def load_to_frac(load) -> float:
+    """CFT utilisation fraction vs 32Ft vehicle."""
+    return load_to_cft(load) / _32FT_CFT
+
 def frac_to_equiv(frac, max_cap):
-    """Fraction of 32Ft → equivalent shipment count."""
+    """Fraction of 32Ft → equivalent CFT for a given vehicle capacity (CFT)."""
     return frac * max_cap
 
 def _vehicle_size_num(vehicle_name):
@@ -646,6 +675,7 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
     agg = agg_for(sel_names, dh_loads_map)
     total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"]
     total_frac = load_to_frac(agg) if total_ship else 0.0
+    total_cft  = load_to_cft(agg)
     req_equiv  = frac_to_equiv(total_frac, max_cap) if total_ship else 0
     best_v = best_cap = best_util = n_trucks = None
     truck_breakdown = []
@@ -673,16 +703,22 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
 
         best_real_cap = int(round(best_cap * ship_per_equiv)) if isinstance(best_cap, int) else None
 
+        # CFT tooltip: show load CFT vs vehicle CFT
+        veh_cft = round(best_cap, 1) if best_cap else 0
+        load_cft_str = f"{total_cft:,.1f}"
+        veh_cft_str  = f"{veh_cft:,.1f}"
+
         if len(truck_breakdown) > 1:
             util_lines = ""
             for i, tb in enumerate(truck_breakdown, start=1):
                 pct     = round(tb["util_frac"] * 100, 1)
                 tb_col  = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
                 tb_real = int(round(tb["capacity"] * ship_per_equiv))
+                tb_load_cft = round(tb["util_frac"] * tb["capacity"], 1)
                 util_lines += (
                     f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
                     f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
-                    f'<div style="font-size:11px;opacity:.7">~{tb_real:,} shipments capacity</div>'
+                    f'<div style="font-size:11px;opacity:.7">~{tb_real:,} ships &nbsp;|&nbsp; {tb_load_cft:,.0f}/{tb["capacity"]:,.0f} CFT</div>'
                 )
             util_block = (
                 f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
@@ -695,6 +731,7 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
                 f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
                 f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
                 f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
+                f'<div style="font-size:11px;opacity:.7;margin-top:2px">{load_cft_str} / {veh_cft_str} CFT</div>'
                 f'</div>'
             )
 
@@ -719,6 +756,17 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
             f'</div>'
         )
 
+        # CFT breakdown line (bags × CFT/bag + semi × CFT/semi + totes × CFT/tote)
+        bags = agg["bag_shipments"] / SHIPMENTS_PER_BAG
+        cft_bags  = bags                    * CFT_PER_BAG
+        cft_semi  = agg["semi_count"]       * CFT_PER_SEMI
+        cft_totes = agg["tote_count"]       * CFT_PER_TOTE
+        cft_formula = (
+            f'({bags:.0f} bags×{CFT_PER_BAG:.2f}) + ({agg["semi_count"]}×{CFT_PER_SEMI:.2f}) + ({agg["tote_count"]}×{CFT_PER_TOTE:.2f})'
+            f' = <b>{total_cft:,.1f} CFT</b> &nbsp;÷&nbsp; <b>{veh_cft_str} CFT</b> vehicle'
+            f' = <b style="color:{conf_col}">{util_pct}%</b>'
+        )
+
         with main_box.container():
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
@@ -728,6 +776,9 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
                 f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
                 f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
                 f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
+                f'  </div>'
+                f'  <div style="font-size:11px;opacity:.6;margin-top:8px;font-style:italic">'
+                f'    📐 CFT: {cft_formula}'
                 f'  </div>'
                 f'</div>'
                 f'{right_html}'
