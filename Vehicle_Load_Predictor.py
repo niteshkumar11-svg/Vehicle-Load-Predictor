@@ -920,8 +920,6 @@ def main():
         sel_cutoffs  = st.session_state.sel_cutoffs
         dh_loads_map = {}
         dh_summary   = pd.DataFrame()
-        submitted_dh = False
-        dh_evt       = None
 
         if sel_cutoffs:
             filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
@@ -976,10 +974,6 @@ def main():
                     f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🏭 DH Load Breakdown — {n_dh} DH(s) with pending load</div>',
                     unsafe_allow_html=True,
                 )
-                if not dh_summary.empty:
-                    with st.form("dh_form", border=False):
-                        submitted_dh = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
-
         # Spacer reserves space for the entire fixed block above ─────────────
         st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
 
@@ -995,8 +989,8 @@ def main():
                 height=dh_h,
                 column_config=DH_COL_CFG,
             )
-            if submitted_dh and dh_evt is not None:
-                st.session_state.sel_dh_names = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
+            # Update selection immediately on every rerun (on_select="rerun" triggers this)
+            st.session_state.sel_dh_names = [dh_summary.iloc[i]["DH Name"] for i in dh_evt.selection.rows]
         elif sel_cutoffs and dh_summary.empty:
             st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
@@ -1012,9 +1006,6 @@ def main():
             .reset_index(drop=True)
             if not ready_summary_all.empty else ready_summary_all
         )
-        ready_submitted = False
-        ready_evt       = None
-
         with st.container(key="ready_pred_sticky"):
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             ready_main_box = st.empty()
@@ -1024,9 +1015,6 @@ def main():
                 f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🚀 Ready to Dispatch DHs — {n_ready} DH(s) over 70% utilization</div>',
                 unsafe_allow_html=True,
             )
-            if not ready_summary.empty:
-                with st.form("ready_dh_form", border=False):
-                    ready_submitted = st.form_submit_button("✅ Confirm DH Selection", use_container_width=True)
 
         st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
 
@@ -1044,9 +1032,8 @@ def main():
                 height=dh_h,
                 column_config=DH_COL_CFG,
             )
-            if ready_submitted and ready_evt is not None:
-                st.session_state.ready_sel_dh_names = [ready_summary.iloc[i]["DH Name"] for i in ready_evt.selection.rows]
-
+            # Update selection immediately on every rerun
+            st.session_state.ready_sel_dh_names = [ready_summary.iloc[i]["DH Name"] for i in ready_evt.selection.rows]
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
 
         render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, dh_max_vehicle, vcaps, max_cap)
