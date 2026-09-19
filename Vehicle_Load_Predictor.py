@@ -121,7 +121,7 @@ section[data-testid="stSidebar"]{
 button[data-testid="stSidebarCollapseButton"]{display:none!important}
 div[data-testid="stSidebarResizeHandle"]{display:none!important}
 /* Reduce the default top padding Streamlit adds below the sticky header */
-div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!important}
+div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!important}
 /* Combined Prediction box + Selected DHs pinned to the top while scrolling.
    NOTE: position:sticky does NOT work here — Streamlit wraps every
    st.container() in its own shrink-to-fit wrapper div, which never gives a
@@ -132,10 +132,10 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!importan
    (header credit, Refresh button). left is offset past the sidebar's
    width so the box doesn't render on top of/underneath it. */
 .st-key-pred_sticky, .st-key-ready_pred_sticky{
-    position:fixed!important; top:80px!important; left:284px!important; right:24px!important;
+    position:fixed!important; top:56px!important; left:284px!important; right:24px!important;
     width:calc(100vw - 308px)!important; max-width:calc(100vw - 308px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
-    z-index:500; background:#f0f2f6; padding-bottom:10px;
+    z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:10px;
 }
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
