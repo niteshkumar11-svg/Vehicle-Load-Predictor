@@ -186,13 +186,6 @@ header[data-testid="stHeader"]::before{
 section[data-testid="stSidebar"] div[data-testid="stButton"] button{
     font-size:13px!important;
 }
-/* Cutoff chip buttons in sidebar: compact multi-select chips */
-.cutoff-chip button{
-    width:100%!important; margin-bottom:4px!important;
-    padding:6px 10px!important; font-size:12px!important;
-    text-align:left!important; white-space:normal!important;
-    line-height:1.3!important; height:auto!important;
-}
 /* Sidebar section label */
 .sidebar-section-label{
     font-size:11px; font-weight:700; text-transform:uppercase;
@@ -880,20 +873,22 @@ def main():
             st.rerun()
 
         st.markdown('<div class="sidebar-section-label">🕐 Select Cutoff</div>', unsafe_allow_html=True)
+        new_sel = []
         for _, row in cutoff_tbl.iterrows():
             co  = row["Cutoff"]
             tot = row["Total Shipment"]
-            selected = co in st.session_state.sel_cutoffs
-            label = f"{'✅ ' if selected else ''}{co}  —  {tot:,} ships"
-            with st.container(key=f"cutoff_chip_{co.replace(':','_')}"):
-                if st.button(label, use_container_width=True,
-                             type="primary" if selected else "secondary"):
-                    if selected:
-                        st.session_state.sel_cutoffs = [c for c in st.session_state.sel_cutoffs if c != co]
-                    else:
-                        st.session_state.sel_cutoffs = [co]   # single-select: replace
-                    st.session_state.sel_dh_names = []
-                    st.rerun()
+            checked = st.checkbox(
+                f"{co} — {tot:,} ships",
+                value=(co in st.session_state.sel_cutoffs),
+                key=f"cutoff_chk_{co.replace(':','_')}",
+            )
+            if checked:
+                new_sel.append(co)
+        if new_sel != st.session_state.sel_cutoffs:
+            # Clear DH selection only if the cutoff set actually changed
+            st.session_state.sel_dh_names = []
+            st.session_state.sel_cutoffs = new_sel
+            st.rerun()
 
     # ── Tab 1: existing dashboard, unchanged ────────────────────────────────
     if st.session_state.active_tab == "overview":
