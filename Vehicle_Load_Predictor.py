@@ -139,9 +139,13 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
 }
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:340px}
+.pred-sticky-spacer{height:300px; margin:0!important; padding:0!important}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:440px}
+    .pred-sticky-spacer{height:400px}
+}
+/* Kill the default gap Streamlit adds between block elements after the spacer */
+div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer) + div{
+    margin-top:0!important; padding-top:0!important;
 }
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
