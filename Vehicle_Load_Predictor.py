@@ -99,7 +99,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-SIDEBAR_WIDTH_PX = 190
+SIDEBAR_WIDTH_PX = 260
 
 st.markdown("""
 <style>
@@ -116,7 +116,7 @@ st.markdown("""
    buttons — no collapse arrow, fixed minimum width so it doesn't eat
    dashboard space. */
 section[data-testid="stSidebar"]{
-    width:190px!important; min-width:190px!important; max-width:190px!important;
+    width:260px!important; min-width:260px!important; max-width:260px!important;
 }
 button[data-testid="stSidebarCollapseButton"]{display:none!important}
 div[data-testid="stSidebarResizeHandle"]{display:none!important}
@@ -132,8 +132,8 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:72px!importan
    (header credit, Refresh button). left is offset past the sidebar's
    width so the box doesn't render on top of/underneath it. */
 .st-key-pred_sticky, .st-key-ready_pred_sticky{
-    position:fixed!important; top:80px!important; left:214px!important; right:24px!important;
-    width:calc(100vw - 238px)!important; max-width:calc(100vw - 238px)!important;
+    position:fixed!important; top:80px!important; left:284px!important; right:24px!important;
+    width:calc(100vw - 308px)!important; max-width:calc(100vw - 308px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
     z-index:500; background:#f0f2f6; padding-bottom:10px;
 }
@@ -185,6 +185,18 @@ header[data-testid="stHeader"]::before{
 /* Sidebar buttons (nav + refresh): full width, consistent sizing */
 section[data-testid="stSidebar"] div[data-testid="stButton"] button{
     font-size:13px!important;
+}
+/* Cutoff chip buttons in sidebar: compact multi-select chips */
+.cutoff-chip button{
+    width:100%!important; margin-bottom:4px!important;
+    padding:6px 10px!important; font-size:12px!important;
+    text-align:left!important; white-space:normal!important;
+    line-height:1.3!important; height:auto!important;
+}
+/* Sidebar section label */
+.sidebar-section-label{
+    font-size:11px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.7px; color:#64748b; margin:12px 0 6px 2px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -668,7 +680,6 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
             .sort_values(["Cut Off", "DH Name"])
             .reset_index(drop=True)
         )
-        dh_summary["Status"] = dh_summary["Utilization %"].apply(_status_dot)
     return dh_summary, dh_loads_map
 
 
@@ -833,6 +844,26 @@ def main():
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = "overview"
 
+    # ── Build cutoff options once (used in sidebar + main tab) ─────────────
+    cutoff_ship_totals = {}
+    for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
+        dh_n = str(dr["dh_name"])
+        co   = dr["cutoff_display"]
+        ld   = all_dh_loads.get(dh_n, dict(bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0))
+        tot  = ld["bag_shipments"] + ld["semi_count"] + ld["tote_count"] + ld["secondary_count"]
+        cutoff_ship_totals[co] = cutoff_ship_totals.get(co, 0) + tot
+
+    cutoff_tbl = (
+        df_dh.groupby("cutoff_display")
+        .agg(DH_Count=("dh_name", "nunique"))
+        .reset_index()
+        .rename(columns={"cutoff_display": "Cutoff", "DH_Count": "# DHs"})
+        .sort_values("Cutoff")
+        .reset_index(drop=True)
+    )
+    cutoff_tbl["Total Shipment"] = cutoff_tbl["Cutoff"].map(cutoff_ship_totals).fillna(0).astype(int)
+    cutoff_options = list(cutoff_tbl["Cutoff"])
+
     with st.sidebar:
         if st.button(
             "📊 Overview", use_container_width=True,
@@ -847,6 +878,22 @@ def main():
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+
+        st.markdown('<div class="sidebar-section-label">🕐 Select Cutoff</div>', unsafe_allow_html=True)
+        for _, row in cutoff_tbl.iterrows():
+            co  = row["Cutoff"]
+            tot = row["Total Shipment"]
+            selected = co in st.session_state.sel_cutoffs
+            label = f"{'✅ ' if selected else ''}{co}  —  {tot:,} ships"
+            with st.container(key=f"cutoff_chip_{co.replace(':','_')}"):
+                if st.button(label, use_container_width=True,
+                             type="primary" if selected else "secondary"):
+                    if selected:
+                        st.session_state.sel_cutoffs = [c for c in st.session_state.sel_cutoffs if c != co]
+                    else:
+                        st.session_state.sel_cutoffs = [co]   # single-select: replace
+                    st.session_state.sel_dh_names = []
+                    st.rerun()
 
     # ── Tab 1: existing dashboard, unchanged ────────────────────────────────
     if st.session_state.active_tab == "overview":
@@ -889,55 +936,13 @@ def main():
 
         st.divider()
 
-        cutoff_ship_totals = {}
-        for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
-            dh_n = str(dr["dh_name"])
-            co   = dr["cutoff_display"]
-            ld   = all_dh_loads.get(dh_n, dict(bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0))
-            tot  = ld["bag_shipments"] + ld["semi_count"] + ld["tote_count"] + ld["secondary_count"]
-            cutoff_ship_totals[co] = cutoff_ship_totals.get(co, 0) + tot
-
-        cutoff_tbl = (
-            df_dh.groupby("cutoff_display")
-            .agg(DH_Count=("dh_name", "nunique"))
-            .reset_index()
-            .rename(columns={"cutoff_display": "Cutoff", "DH_Count": "# DHs"})
-            .sort_values("Cutoff")
-            .reset_index(drop=True)
-        )
-        cutoff_tbl["Total Shipment"] = cutoff_tbl["Cutoff"].map(cutoff_ship_totals).fillna(0).astype(int)
-
-        table_heading("🕐 Select Cutoff")
-        cutoff_options = [
-            f"{r['Cutoff']} — {r['Total Shipment']:,} pending"
-            for _, r in cutoff_tbl.iterrows()
-        ]
-        cutoff_label_to_value = dict(zip(cutoff_options, cutoff_tbl["Cutoff"]))
-
-        with st.form("cutoff_form", border=False):
-            cur_cutoff = st.session_state.sel_cutoffs[0] if st.session_state.sel_cutoffs else None
-            cur_label  = next((lbl for lbl, v in cutoff_label_to_value.items() if v == cur_cutoff), None)
-            chosen_label = st.selectbox(
-                "Cutoff (with pending load)",
-                cutoff_options,
-                index=cutoff_options.index(cur_label) if cur_label in cutoff_options else 0,
-            )
-            submitted_cut = st.form_submit_button("✅ Apply Cutoff", use_container_width=True)
-
-        if submitted_cut:
-            new_cutoffs = [cutoff_label_to_value[chosen_label]]
-            if new_cutoffs != st.session_state.sel_cutoffs:
-                st.session_state.sel_dh_names = []
-            st.session_state.sel_cutoffs = new_cutoffs
-
-        sel_cutoffs = st.session_state.sel_cutoffs
-
+        sel_cutoffs  = st.session_state.sel_cutoffs
         dh_loads_map = {}
         dh_summary   = pd.DataFrame()
 
         if not sel_cutoffs:
             table_heading("🏭 DH Load Breakdown")
-            st.info("👆 Select a cutoff above and click **Apply** to see the DH breakdown.")
+            st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
         else:
             filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
             dh_summary, dh_loads_map = build_dh_rows(filt_dh, all_dh_loads, dh_max_vehicle, vcaps)
@@ -972,7 +977,6 @@ def main():
                             "Utilization %":       st.column_config.ProgressColumn(
                                 format="%.1f%%", min_value=0, max_value=100,
                             ),
-                            "Status":              st.column_config.TextColumn(alignment="center", width="small"),
                         },
                     )
 
