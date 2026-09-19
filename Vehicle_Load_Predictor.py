@@ -762,11 +762,10 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
                 f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
                 f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
                 f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
-                f'<div style="font-size:11px;opacity:.7;margin-top:2px">{load_cft_str} / {veh_cft_str} CFT</div>'
                 f'</div>'
             )
 
-        cap_sub = f'<div style="font-size:12px;opacity:.7;margin-top:4px">~{best_real_cap:,} shipments capacity</div>' if best_real_cap is not None else ""
+        cap_sub = ""
 
         right_html = (
             f'<div style="display:flex;align-items:center;gap:28px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.25);padding-left:28px">'
