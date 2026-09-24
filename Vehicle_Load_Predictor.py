@@ -9,6 +9,7 @@ import re
 import warnings
 from datetime import datetime
 from difflib import SequenceMatcher
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -204,13 +205,15 @@ section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
 
 st.markdown('<div class="dev-credit">Developed by Nitesh Kumar</div>', unsafe_allow_html=True)
 
+def _service_creds():
+    key = "gcp_service_account" if "gcp_service_account" in st.secrets else "GOOGLE_SERVICE_ACCOUNT"
+    return Credentials.from_service_account_info(dict(st.secrets[key]), scopes=GSHEETS_SCOPES)
+
 def _gc():
     if not GSPREAD_OK:
         st.error("Install gspread + google-auth")
         st.stop()
-    key = "gcp_service_account" if "gcp_service_account" in st.secrets else "GOOGLE_SERVICE_ACCOUNT"
-    creds = Credentials.from_service_account_info(dict(st.secrets[key]), scopes=GSHEETS_SCOPES)
-    return gspread.authorize(creds)
+    return gspread.authorize(_service_creds())
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_sheets():
@@ -219,45 +222,23 @@ def load_sheets():
     return {ws.title: ws.get_all_values() for ws in sh.worksheets()}
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _data_fetched_at(_key):
-    """Fallback when the Bag sheet has no Last Updated stamp."""
-    return datetime.now()
-
-def _parse_sheet_dt(s):
-    s = str(s).strip()
-    if not s or s.lower() in ("nan", "none"):
-        return None
-    for fmt in ("%d %b %Y, %I:%M %p", "%d %b %Y, %H:%M", "%Y-%m-%d %H:%M:%S",
-                "%d-%m-%Y %H:%M:%S", "%d/%m/%Y %H:%M"):
-        try:
-            return datetime.strptime(s, fmt)
-        except ValueError:
-            pass
+def tracker_last_updated(_key):
+    """Drive modifiedTime for the tracker spreadsheet (= Bag sheet edit history)."""
+    from google.auth.transport.requests import AuthorizedSession
     try:
-        return pd.to_datetime(s, dayfirst=True).to_pydatetime().replace(tzinfo=None)
-    except (ValueError, TypeError):
+        resp = AuthorizedSession(_service_creds()).get(
+            f"https://www.googleapis.com/drive/v3/files/{SPREADSHEET_ID}",
+            params={"fields": "modifiedTime"},
+        )
+        resp.raise_for_status()
+        dt = datetime.fromisoformat(resp.json()["modifiedTime"].replace("Z", "+00:00"))
+        return dt.astimezone(ZoneInfo("Asia/Kolkata")).replace(tzinfo=None)
+    except Exception:
         return None
 
-def bag_sheet_last_updated(bag_values):
-    """Read the tracker-written Last Updated stamp from the Bag sheet."""
-    if not bag_values:
-        return None
-    for row in bag_values[:3]:
-        for cell in row:
-            m = re.search(r"last\s+updated\s*:\s*(.+)", str(cell), re.I)
-            if m:
-                dt = _parse_sheet_dt(m.group(1))
-                if dt:
-                    return dt
-    header = bag_values[0]
-    for i, h in enumerate(header):
-        if re.search(r"last\s+updated", str(h), re.I):
-            for row in bag_values[1:]:
-                if i < len(row):
-                    dt = _parse_sheet_dt(row[i])
-                    if dt:
-                        return dt
-    return None
+@st.cache_data(ttl=300, show_spinner=False)
+def _data_fetched_at(_key):
+    return datetime.now()
 
 def _norm(s):
     return re.sub(r"[_\s\-]+", "", str(s)).lower()
@@ -864,8 +845,7 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    bag_v = _find(raw, "bag")
-    last_updated = bag_sheet_last_updated(bag_v) or _data_fetched_at(_key)
+    last_updated = tracker_last_updated(_key) or _data_fetched_at(_key)
     dh_h = 650
 
     if "active_tab" not in st.session_state:
