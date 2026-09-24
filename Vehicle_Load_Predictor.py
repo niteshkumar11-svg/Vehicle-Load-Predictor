@@ -585,22 +585,25 @@ def _format_truck_label(breakdown):
 
 def recommend_vehicle_constrained(load_cft, vcaps, constraint_label=None, constraint_cap=None):
     """
-    Clubbed DHs with a max-vehicle constraint: allocate the first truck at the
-    constrained size, then recommend unconstrained vehicles for any overflow.
+    Clubbed DHs with a max-vehicle constraint.
+    • Load fits within the cap → smallest vehicle that fits the load (≤ max allowed).
+    • Load exceeds the cap → one full max-constraint truck, then unconstrained for overflow.
     """
     if load_cft <= 0 or not vcaps:
         return None, 0, 0.0, 0, []
     if not constraint_label or constraint_cap <= 0:
         return recommend_vehicle(load_cft, vcaps)
 
-    breakdown = []
-    first_load = min(load_cft, constraint_cap)
-    breakdown.append({
+    allowed = allowed_vcaps_for(constraint_label, vcaps)
+    if load_cft <= constraint_cap:
+        return recommend_vehicle(load_cft, allowed)
+
+    breakdown = [{
         "vehicle": constraint_label,
         "capacity": constraint_cap,
-        "util_frac": first_load / constraint_cap if constraint_cap else 0.0,
-    })
-    remaining = load_cft - first_load
+        "util_frac": 1.0,
+    }]
+    remaining = load_cft - constraint_cap
     if remaining > 0:
         _, _, _, _, rem_bd = recommend_vehicle(remaining, vcaps)
         breakdown.extend(rem_bd)
