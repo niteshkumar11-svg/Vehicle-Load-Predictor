@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 warnings.filterwarnings("ignore")
 
@@ -164,13 +165,11 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
     z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:10px;
 }
-/* Reserves the space the box would have occupied in normal flow, since
-   position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:280px; margin:0!important; padding:0!important}
-.pred-sticky-spacer-tall{height:400px; margin:0!important; padding:0!important}
-@media (max-width:900px){
-    .pred-sticky-spacer{height:360px}
-    .pred-sticky-spacer-tall{height:480px}
+/* Reserves the space the fixed sticky block occupies — height is synced to the
+   sticky element by _sync_sticky_spacer(); these values are fallbacks only. */
+.pred-sticky-spacer,.pred-sticky-spacer-tall{height:200px; margin:0!important; padding:0!important}
+div:has(> .pred-sticky-spacer),div:has(> .pred-sticky-spacer-tall){
+    margin:0!important; padding:0!important; min-height:0!important;
 }
 /* Kill the default gap Streamlit adds between block elements after the spacer */
 div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer) + div,
@@ -178,6 +177,7 @@ div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer-tall) + div{
     margin-top:0!important; padding-top:0!important;
 }
 div[data-testid="stDataFrame"]{margin-top:0!important}
+div[data-testid="stDataFrame"] > div{margin-top:0!important}
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
 /* Base .klabel/.kvalue/.ksub are reused on white-background detail boxes
@@ -786,6 +786,43 @@ def agg_for(names, dh_loads_map):
     return a
 
 
+def _sync_sticky_spacer():
+    """Match spacer height to the fixed sticky block so the table starts flush below it."""
+    components.html(
+        """
+        <script>
+        (function () {
+            const doc = window.parent.document;
+            function sync() {
+                const sticky = doc.querySelector(
+                    ".st-key-pred_sticky, .st-key-ready_pred_sticky"
+                );
+                const spacer = doc.querySelector(
+                    ".pred-sticky-spacer, .pred-sticky-spacer-tall"
+                );
+                if (!sticky || !spacer) return;
+                const h = Math.ceil(sticky.getBoundingClientRect().height);
+                if (h > 0) spacer.style.height = h + "px";
+            }
+            sync();
+            requestAnimationFrame(sync);
+            window.parent.addEventListener("resize", sync);
+            const sticky = doc.querySelector(
+                ".st-key-pred_sticky, .st-key-ready_pred_sticky"
+            );
+            if (sticky) {
+                new MutationObserver(sync).observe(sticky, {
+                    childList: true, subtree: true, attributes: true,
+                });
+            }
+            [50, 150, 400].forEach((ms) => setTimeout(sync, ms));
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+
 def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
     """
     Renders the combined Load Bifurcation + Recommended Vehicle prediction
@@ -1087,6 +1124,7 @@ def main():
 
         sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
         render_prediction_box(main_box, sel_names, dh_loads_map, vcaps)
+        _sync_sticky_spacer()
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
     elif st.session_state.active_tab == "ready":
@@ -1135,6 +1173,7 @@ def main():
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
 
         render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps)
+        _sync_sticky_spacer()
 
     # ── Tab 3: Vehicle max capacity reference ───────────────────────────────
     else:
