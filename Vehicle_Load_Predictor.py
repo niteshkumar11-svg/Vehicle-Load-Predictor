@@ -77,7 +77,7 @@ CFT_PER_SEMI      = _32FT_CFT / SEMI_32FT                                    # �
 CFT_PER_TOTE      = _32FT_CFT / TOTES_32FT                                   # ≈ 3.54
 CFT_PER_SECONDARY = _32FT_CFT / SECONDARY_32FT                               # ≈ 0.162
 
-# Vehicle capacities in CFT — each vehicle uses its own real dimensions.
+
 DEFAULT_VEHICLE_CAPS = [
     ("6.5 Ft", _VEHICLE_CFT_MAP["6.5 Ft"]),   # 143.5 CFT
     ("8 Ft",   _VEHICLE_CFT_MAP["8 Ft"]),      # 210.0 CFT
@@ -220,9 +220,44 @@ def load_sheets():
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _data_fetched_at(_key):
-    """Timestamp of the last actual sheet fetch (shares load_sheets' cache
-    lifecycle via the same _key/ttl), for the 'data last updated' display."""
+    """Fallback when the Bag sheet has no Last Updated stamp."""
     return datetime.now()
+
+def _parse_sheet_dt(s):
+    s = str(s).strip()
+    if not s or s.lower() in ("nan", "none"):
+        return None
+    for fmt in ("%d %b %Y, %I:%M %p", "%d %b %Y, %H:%M", "%Y-%m-%d %H:%M:%S",
+                "%d-%m-%Y %H:%M:%S", "%d/%m/%Y %H:%M"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+    try:
+        return pd.to_datetime(s, dayfirst=True).to_pydatetime().replace(tzinfo=None)
+    except (ValueError, TypeError):
+        return None
+
+def bag_sheet_last_updated(bag_values):
+    """Read the tracker-written Last Updated stamp from the Bag sheet."""
+    if not bag_values:
+        return None
+    for row in bag_values[:3]:
+        for cell in row:
+            m = re.search(r"last\s+updated\s*:\s*(.+)", str(cell), re.I)
+            if m:
+                dt = _parse_sheet_dt(m.group(1))
+                if dt:
+                    return dt
+    header = bag_values[0]
+    for i, h in enumerate(header):
+        if re.search(r"last\s+updated", str(h), re.I):
+            for row in bag_values[1:]:
+                if i < len(row):
+                    dt = _parse_sheet_dt(row[i])
+                    if dt:
+                        return dt
+    return None
 
 def _norm(s):
     return re.sub(r"[_\s\-]+", "", str(s)).lower()
@@ -241,7 +276,6 @@ def _df(vals, hdr=0):
     if len(vals) <= hdr:
         return pd.DataFrame()
     heads = [str(h).strip() for h in vals[hdr]]
-    # Deduplicate column names to prevent d[[col]] returning a multi-column DataFrame
     seen: dict = {}
     deduped = []
     for h in heads:
@@ -711,8 +745,6 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
     best_v = best_cap = best_util = n_trucks = None
     truck_breakdown = []
 
-    # Selected DHs may have DIFFERENT max-permissible-vehicle constraints —
-    # the combined prediction is capped at the single most restrictive one.
     constrained_nums = [
         n for n in (
             _vehicle_size_num(dh_max_vehicle[_norm(dh_n)])
@@ -786,17 +818,18 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
             f'</div>'
         )
 
-        # CFT breakdown line (bags × CFT/bag + semi × CFT/semi + totes × CFT/tote)
-        bags = agg["bag_shipments"] / SHIPMENTS_PER_BAG
+        bag_cft  = (agg["bag_shipments"] / SHIPMENTS_PER_BAG) * CFT_PER_BAG
+        semi_cft = agg["semi_count"] * CFT_PER_SEMI
+        tote_cft = agg["tote_count"] * CFT_PER_TOTE
         with main_box.container():
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
                 f'<div style="flex:1;min-width:0">'
                 f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
                 f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
-                f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments)<br>'
-                f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments<br>'
-                f'    🧺 <b>{agg["tote_count"]:,}</b> totes'
+                f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments · <b>{bag_cft:,.1f}</b> CFT)<br>'
+                f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments · <b>{semi_cft:,.1f}</b> CFT<br>'
+                f'    🧺 <b>{agg["tote_count"]:,}</b> totes · <b>{tote_cft:,.1f}</b> CFT'
                 f'  </div>'
                 f'</div>'
                 f'{right_html}'
@@ -831,13 +864,13 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    last_updated = _data_fetched_at(_key)
+    bag_v = _find(raw, "bag")
+    last_updated = bag_sheet_last_updated(bag_v) or _data_fetched_at(_key)
     dh_h = 650
 
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = "overview"
 
-    # ── Build cutoff options once (used in sidebar + main tab) ─────────────
     cutoff_ship_totals = {}
     for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
         dh_n = str(dr["dh_name"])
@@ -872,7 +905,6 @@ def main():
             st.cache_data.clear()
             st.rerun()
 
-        # Selected DHs — shown above cutoff section when any DH is selected
         active_sel = st.session_state.get("sel_dh_names", []) if st.session_state.active_tab == "overview" else st.session_state.get("ready_sel_dh_names", [])
         if active_sel:
             st.markdown('<div class="sidebar-section-label">✅ Selected DHs</div>', unsafe_allow_html=True)
