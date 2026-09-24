@@ -235,6 +235,20 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button{
 section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
     font-size:14px!important;
 }
+/* Vehicle Max Capacity tab: tight heading-to-table spacing */
+.st-key-capacity_tab div[data-testid="stCaption"]{margin:0!important;padding:0 0 2px!important}
+.st-key-capacity_tab .vcap-hdr{margin:0!important;padding:0 0 4px!important}
+.st-key-capacity_tab .vcap-note{margin:0 0 2px!important}
+.st-key-capacity_tab div[data-testid="stVerticalBlock"]{gap:0!important}
+.st-key-capacity_tab div[data-testid="stElementContainer"],
+.st-key-capacity_tab div[data-testid="stDataFrame"],
+.st-key-capacity_tab div[data-testid="stDataFrame"] > div{
+    margin:0!important;padding-top:0!important;
+}
+.st-key-capacity_tab [data-testid="stDataFrame"] td,
+.st-key-capacity_tab [data-testid="stDataFrame"] th{
+    text-align:center!important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -708,16 +722,33 @@ VEHICLE_CAP_COL_CFG = {
     "Max Bag Shipments":   st.column_config.NumberColumn(format="%d", alignment="center"),
     "Max Semi Large":      st.column_config.NumberColumn(format="%d", alignment="center"),
     "Max Totes":           st.column_config.NumberColumn(format="%d", alignment="center"),
-    "Total Max Shipments": st.column_config.NumberColumn(format="%d", alignment="center"),
 }
 
+def _sidebar_nav_css(active_tab):
+    nav = (("overview", "nav_overview"), ("ready", "nav_ready"), ("capacity", "nav_capacity"))
+    rules = []
+    for tab, key in nav:
+        sel = tab == active_tab
+        rules.append(
+            f"section[data-testid='stSidebar'] .st-key-{key} button{{"
+            f"background:{'#ff4b4b' if sel else '#fff'}!important;"
+            f"color:{'#fff' if sel else '#31333f'}!important;"
+            f"border-color:{'#ff4b4b' if sel else 'rgba(49,51,63,0.2)'}!important;"
+            f"}}"
+        )
+    return f"<style>{''.join(rules)}</style>"
+
+
 def render_vehicle_capacity_page(vcaps):
-    st.caption(
-        "Per-type maximums assume the full vehicle CFT is used for that type only. "
-        "Total Max Shipments = bag + semi-large + tote maximums combined."
+    st.markdown(
+        '<div class="vcap-note" style="font-size:12px;color:#64748b">'
+        "Per-type maximums assume the full vehicle CFT is used for that type only."
+        "</div>",
+        unsafe_allow_html=True,
     )
+    cap_df = build_vehicle_capacity_df(vcaps).drop(columns=["Total Max Shipments"], errors="ignore")
     st.dataframe(
-        build_vehicle_capacity_df(vcaps),
+        cap_df,
         use_container_width=True,
         hide_index=True,
         height=420,
@@ -1074,21 +1105,13 @@ def main():
     cutoff_options = list(cutoff_tbl["Cutoff"])
 
     with st.sidebar:
-        if st.button(
-            "📊 Overview", use_container_width=True,
-            type="primary" if st.session_state.active_tab == "overview" else "secondary",
-        ):
+        if st.button("📊 Overview", key="nav_overview", use_container_width=True):
             st.session_state.active_tab = "overview"
-        if st.button(
-            "🚀 Ready to Dispatch", use_container_width=True,
-            type="primary" if st.session_state.active_tab == "ready" else "secondary",
-        ):
+        if st.button("🚀 Ready to Dispatch", key="nav_ready", use_container_width=True):
             st.session_state.active_tab = "ready"
-        if st.button(
-            "🚛 Vehicle Max Capacity", use_container_width=True,
-            type="primary" if st.session_state.active_tab == "capacity" else "secondary",
-        ):
+        if st.button("🚛 Vehicle Max Capacity", key="nav_capacity", use_container_width=True):
             st.session_state.active_tab = "capacity"
+        st.markdown(_sidebar_nav_css(st.session_state.active_tab), unsafe_allow_html=True)
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
@@ -1279,13 +1302,14 @@ def main():
 
     # ── Tab 3: Vehicle max capacity reference ───────────────────────────────
     else:
-        st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
-        st.markdown(
-            '<div style="font-size:20px;font-weight:700;text-align:center;padding:8px 0 12px">'
-            '🚛 Vehicle Max Capacity — CFT-based shipment limits</div>',
-            unsafe_allow_html=True,
-        )
-        render_vehicle_capacity_page(vcaps)
+        with st.container(key="capacity_tab"):
+            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
+            st.markdown(
+                '<div class="vcap-hdr" style="font-size:20px;font-weight:700;text-align:center">'
+                '🚛 Vehicle Max Capacity — CFT-based shipment limits</div>',
+                unsafe_allow_html=True,
+            )
+            render_vehicle_capacity_page(vcaps)
 
 
 def render_about_credits():
