@@ -162,22 +162,18 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
     position:fixed!important; top:56px!important; left:284px!important; right:24px!important;
     width:calc(100vw - 308px)!important; max-width:calc(100vw - 308px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
-    z-index:500; background:#f0f2f6; padding-top:4px; padding-bottom:4px;
+    z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:10px;
 }
-/* Reserves the space the fixed block occupies (heading sits below spacer). */
-.pred-sticky-spacer{height:148px; margin:0!important; padding:0!important}
-.pred-sticky-spacer-tall{height:248px; margin:0!important; padding:0!important}
+/* Reserves the space the box would have occupied in normal flow, since
+   position:fixed removes it — otherwise content below jumps up underneath it. */
+.pred-sticky-spacer{height:255px; margin:0!important; padding:0!important}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:188px}
-    .pred-sticky-spacer-tall{height:288px}
+    .pred-sticky-spacer{height:355px}
 }
-div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer) + div,
-div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer-tall) + div{
+/* Kill the default gap Streamlit adds between block elements after the spacer */
+div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer) + div{
     margin-top:0!important; padding-top:0!important;
 }
-.dh-section-hdr{font-size:18px;font-weight:700;text-align:center;padding:0 0 4px;margin:0}
-div[data-testid="stDataFrame"]{margin-top:0!important}
-.stAlert{margin-top:0!important;margin-bottom:4px!important}
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
 /* Base .klabel/.kvalue/.ksub are reused on white-background detail boxes
@@ -188,13 +184,8 @@ div[data-testid="stDataFrame"]{margin-top:0!important}
 .kcard .klabel{color:rgba(255,255,255,.85)}
 .kcard .kvalue{color:#ffffff}
 .kcard .ksub  {color:rgba(255,255,255,.75)}
-.predcard{background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:12px;
-          padding:12px 16px;color:white;box-shadow:0 6px 20px rgba(37,99,235,.3);
-          max-width:980px;margin:0 auto}
-.predcard-kpi .kpi-num{font-size:22px!important;font-weight:900;line-height:1.1}
-.predcard-kpi .kpi-lbl{font-size:10px!important;opacity:.75;font-weight:700;
-          text-transform:uppercase;letter-spacing:.5px}
-.predcard-kpi .kpi-sub{font-size:11px!important;opacity:.7}
+.predcard{background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:16px;
+          padding:24px 26px;color:white;box-shadow:0 8px 28px rgba(37,99,235,.35)}
 .sec-hdr{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;
          color:#64748b;margin:0 0 6px}
 .bartrack{background:#e2e8f0;border-radius:999px;height:11px;overflow:hidden;margin-top:3px}
@@ -869,7 +860,7 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
         )
         with main_box.container():
             st.markdown(
-                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:16px">'
+                f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
                 f'<div style="flex:1;min-width:0">'
                 f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {len(sel_names)} DH(s)</div>'
                 f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
@@ -1015,54 +1006,59 @@ def main():
             filt_dh = df_dh[df_dh["cutoff_display"].isin(sel_cutoffs)].copy()
             dh_summary, dh_loads_map = build_dh_rows(filt_dh, all_dh_loads, dh_max_vehicle, vcaps)
 
-        spacer_cls = (
-            "pred-sticky-spacer-tall"
-            if st.session_state.sel_dh_names and sel_cutoffs else "pred-sticky-spacer"
-        )
-
+        # Everything above the table is in the fixed container ──────────────
         with st.container(key="pred_sticky"):
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             main_box = st.empty()
 
+            # Default content of main_box: KPI overview cards.
+            # render_prediction_box() replaces this when DHs are selected.
             bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
             with main_box.container():
                 st.markdown(
-                    f'<div class="predcard predcard-kpi" style="display:flex;align-items:center;justify-content:space-around;gap:12px">'
+                    f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
                     f'  <div style="text-align:center">'
-                    f'    <div class="kpi-lbl">🛍️ Total Bags on Floor</div>'
-                    f'    <div class="kpi-num" style="color:#f59e0b">{len(df_bag):,}</div>'
-                    f'    <div class="kpi-sub">{bag_ships:,} shipments</div>'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
                     f'  </div>'
-                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:14px">'
-                    f'    <div class="kpi-lbl">📦 Semi-Large Shipments</div>'
-                    f'    <div class="kpi-num" style="color:#60a5fa">{len(df_semi):,}</div>'
-                    f'    <div class="kpi-sub">Floor pending</div>'
+                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
                     f'  </div>'
-                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:14px">'
-                    f'    <div class="kpi-lbl">🧺 Totes on Floor</div>'
-                    f'    <div class="kpi-num" style="color:#c4b5fd">{len(df_tote):,}</div>'
-                    f'    <div class="kpi-sub">Pending dispatch</div>'
+                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
                     f'  </div>'
-                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:14px">'
-                    f'    <div class="kpi-lbl">📋 Secondary + Bagging Pending</div>'
-                    f'    <div class="kpi-num" style="color:#fca5a5">{len(df_sec):,}</div>'
-                    f'    <div class="kpi-sub">Sorted, not bagged</div>'
+                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
+                    f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
+                    f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
                     f'  </div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
-        st.markdown(f'<div class="{spacer_cls}"></div>', unsafe_allow_html=True)
+            st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
 
-        if not sel_cutoffs:
-            st.markdown('<div class="dh-section-hdr">🏭 DH Load Breakdown</div>', unsafe_allow_html=True)
-            st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
-        elif not dh_summary.empty:
-            st.markdown(
-                f'<div class="dh-section-hdr">🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load</div>',
-                unsafe_allow_html=True,
-            )
+            if not sel_cutoffs:
+                st.markdown(
+                    '<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🏭 DH Load Breakdown</div>',
+                    unsafe_allow_html=True,
+                )
+                st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
+            else:
+                n_dh = len(dh_summary)
+                st.markdown(
+                    f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🏭 DH Load Breakdown — {n_dh} DH(s) with pending load</div>',
+                    unsafe_allow_html=True,
+                )
+        # Spacer reserves space for the entire fixed block above ─────────────
+        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
 
+        # Only the dataframe scrolls in normal flow ──────────────────────────
         if sel_cutoffs and not dh_summary.empty:
             dh_styled = dh_summary.style.map(_vehicle_badge_style, subset=["Recommended Vehicle"])
             dh_evt = st.dataframe(
@@ -1094,20 +1090,17 @@ def main():
             .reset_index(drop=True)
             if not ready_summary_all.empty else ready_summary_all
         )
-        ready_spacer_cls = (
-            "pred-sticky-spacer-tall"
-            if st.session_state.ready_sel_dh_names else "pred-sticky-spacer"
-        )
         with st.container(key="ready_pred_sticky"):
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             ready_main_box = st.empty()
+            st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
+            n_ready = len(ready_summary)
+            st.markdown(
+                f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🚀 Ready to Dispatch DHs — {n_ready} DH(s) over 70% utilization</div>',
+                unsafe_allow_html=True,
+            )
 
-        st.markdown(f'<div class="{ready_spacer_cls}"></div>', unsafe_allow_html=True)
-        n_ready = len(ready_summary)
-        st.markdown(
-            f'<div class="dh-section-hdr">🚀 Ready to Dispatch DHs — {n_ready} DH(s) over 70% utilization</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="pred-sticky-spacer"></div>', unsafe_allow_html=True)
 
         ready_sel_names = []
         if ready_summary.empty:
