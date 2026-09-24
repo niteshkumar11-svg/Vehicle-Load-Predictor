@@ -62,6 +62,35 @@ def _vehicle_cft(vehicle_label: str) -> float:
     m = __import__("re").search(r"(\d+(?:\.\d+)?)", str(vehicle_label))
     return float(m.group(1)) * 8.0 * 9.0 if m else 1.0
 
+def _vehicle_label_for_num(num: float) -> str:
+    """Canonical map label for a numeric ft size, e.g. 6.5 -> '6.5 Ft'."""
+    for label in _VEHICLE_CFT_MAP:
+        if _vehicle_size_num(label) == num:
+            return label
+    return f"{num:g} Ft"
+
+def _parse_vcaps(sheets):
+    """Vehicle list from sheet names/order; capacities always come from CFT map."""
+    cap_v = _find(sheets, "load capacity", "capacity")
+    if not cap_v:
+        return list(DEFAULT_VEHICLE_CAPS)
+    parsed = []
+    seen_nums = set()
+    for row in cap_v:
+        if not row:
+            continue
+        s = str(row[0]).strip()
+        num = _vehicle_size_num(s)
+        if num is None or num in seen_nums:
+            continue
+        seen_nums.add(num)
+        label = _vehicle_label_for_num(num)
+        parsed.append((label, _vehicle_cft(label)))
+    if parsed:
+        parsed.sort(key=lambda x: x[1])
+        return parsed
+    return list(DEFAULT_VEHICLE_CAPS)
+
 # Per-unit CFT derived from 32 Ft baseline (2,304 CFT):
 #   Bags per 32Ft = 17,000 ships / 30 per bag = 566.7 bags  → CFT/bag = 2304/566.7 ≈ 4.07
 #   Semi per 32Ft = 1,800                                    → CFT/semi = 2304/1800 ≈ 1.28
@@ -332,18 +361,7 @@ def parse(_key):
             df_bagging = df_bagging[df_bagging["destination"].notna() & (df_bagging["destination"] != "nan")]
             df_sec = pd.concat([df_sec, df_bagging], ignore_index=True) if not df_sec.empty else df_bagging
 
-    cap_v = _find(sheets, "load capacity", "capacity")
-    vcaps = list(DEFAULT_VEHICLE_CAPS)
-    if cap_v:
-        parsed = []
-        for row in cap_v:
-            if len(row) < 2:
-                continue
-            s = str(row[0]).strip(); n = str(row[1]).strip().replace(",","")
-            if re.search(r"\d+\s*(ft|feet)", s, re.I) and n.isdigit():
-                parsed.append((s, int(n)))
-        if parsed:
-            vcaps = parsed
+    vcaps = _parse_vcaps(sheets)
 
     dh_v = _find(sheets, "dh name", "cut-off", "cutoff", "dh")
     df_dh = pd.DataFrame()
@@ -528,6 +546,7 @@ def recommend_vehicle(load_cft, vcaps):
     if load_cft <= 0 or not vcaps:
         return None, 0, 0.0, 0, []
 
+    vcaps = sorted(vcaps, key=lambda x: x[1])
     max_cap = max(c for _, c in vcaps)
     max_v   = next(v for v, c in vcaps if c == max_cap)
 
@@ -563,6 +582,72 @@ def breakdown_remaining(equiv_remaining, max_cap):
         semi  = int(frac * SEMI_32FT),
         totes = int(frac * TOTES_32FT),
     )
+
+def cft_to_ship_capacity(cft):
+    """Max shipments by type that fit in a given CFT volume."""
+    if cft <= 0:
+        return dict(bag_shipments=0, semi=0, totes=0)
+    return dict(
+        bag_shipments=int(cft / CFT_PER_BAG * SHIPMENTS_PER_BAG),
+        semi=int(cft / CFT_PER_SEMI),
+        totes=int(cft / CFT_PER_TOTE),
+    )
+
+def build_vehicle_capacity_df(vcaps, load_cft=0.0, highlight_vehicle=None):
+    """Per-vehicle max shipment capacity and remaining space after load_cft."""
+    hi_base = str(highlight_vehicle).split(" ×")[0].replace("★ ", "").strip() if highlight_vehicle else None
+    rows = []
+    for v, cft in vcaps:
+        max_cap = cft_to_ship_capacity(cft)
+        rem_cft = max(0.0, cft - load_cft) if load_cft else cft
+        rem_cap = cft_to_ship_capacity(rem_cft)
+        util    = (load_cft / cft * 100) if load_cft and cft else None
+        label   = f"★ {v}" if hi_base and hi_base == v else v
+        row = {
+            "Vehicle":           label,
+            "CFT":               round(cft, 1),
+            "Max Bag Shipments": max_cap["bag_shipments"],
+            "Max Semi Large":    max_cap["semi"],
+            "Max Totes":         max_cap["totes"],
+        }
+        if load_cft:
+            row["Add Bag Shipments"] = rem_cap["bag_shipments"]
+            row["Add Semi Large"]    = rem_cap["semi"]
+            row["Add Totes"]         = rem_cap["totes"]
+            row["Load Util %"]       = round(util, 1) if util is not None else 0.0
+            row["Fits Load"]         = "Yes" if cft >= load_cft else "No"
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+def render_vehicle_capacity_table(vcaps, load_cft=0.0, highlight_vehicle=None):
+    cap_df = build_vehicle_capacity_df(vcaps, load_cft, highlight_vehicle)
+    title  = (
+        "🚛 Vehicle-wise capacity — shipments you can still add (CFT-based)"
+        if load_cft else
+        "🚛 Vehicle-wise max shipment capacity (CFT-based)"
+    )
+    with st.expander(title, expanded=bool(load_cft)):
+        st.caption(
+            "Bag shipments = floor load in bags (30 ships/bag). "
+            "Add columns show remaining space after your current selection."
+            if load_cft else
+            "Maximum shipments each vehicle can hold if loaded with only that type."
+        )
+        st.dataframe(
+            cap_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "CFT":                  st.column_config.NumberColumn(format="%.1f"),
+                "Max Bag Shipments":    st.column_config.NumberColumn(format="%d"),
+                "Max Semi Large":       st.column_config.NumberColumn(format="%d"),
+                "Max Totes":            st.column_config.NumberColumn(format="%d"),
+                "Add Bag Shipments":    st.column_config.NumberColumn(format="%d"),
+                "Add Semi Large":       st.column_config.NumberColumn(format="%d"),
+                "Add Totes":            st.column_config.NumberColumn(format="%d"),
+                "Load Util %":          st.column_config.NumberColumn(format="%.1f%%"),
+            },
+        )
 
 def _status_dot(util_pct):
     """🟢/🟡/🔴 status dot for a utilization percentage."""
@@ -664,8 +749,7 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
         load_cft = load_to_cft(merged_ld)
 
         max_v_str = dh_max_vehicle.get(_norm(dh_n))
-        dh_vcaps  = allowed_vcaps_for(max_v_str, vcaps)
-        rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(load_cft, dh_vcaps)
+        rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(load_cft, vcaps)
 
         dh_rows.append({
             "Cut Off":             dr["cutoff_display"],
@@ -708,7 +792,10 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
     Renders the combined Load Bifurcation + Recommended Vehicle prediction
     card into main_box (an st.empty()) for the given selected DH names.
     Shared by the main tab and the Ready to Dispatch tab.
+    Returns (load_cft, recommended_vehicle_label).
     """
+    if not sel_names:
+        return 0.0, None
     agg = agg_for(sel_names, dh_loads_map)
     total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"]
     total_cft  = load_to_cft(agg) if total_ship else 0.0
@@ -773,6 +860,9 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
         bag_cft  = (agg["bag_shipments"] / SHIPMENTS_PER_BAG) * CFT_PER_BAG
         semi_cft = agg["semi_count"] * CFT_PER_SEMI
         tote_cft = agg["tote_count"] * CFT_PER_TOTE
+        rem      = cft_to_ship_capacity(max(0.0, best_cap - total_cft)) if n_trucks == 1 else cft_to_ship_capacity(
+            max(0.0, truck_breakdown[-1]["capacity"] * (1 - truck_breakdown[-1]["util_frac"]))
+        )
         with main_box.container():
             st.markdown(
                 f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-between;gap:24px">'
@@ -781,16 +871,22 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
                 f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
                 f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments · <b>{bag_cft:,.1f}</b> CFT)<br>'
                 f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments · <b>{semi_cft:,.1f}</b> CFT<br>'
-                f'    🧺 <b>{agg["tote_count"]:,}</b> totes · <b>{tote_cft:,.1f}</b> CFT'
+                f'    🧺 <b>{agg["tote_count"]:,}</b> totes · <b>{tote_cft:,.1f}</b> CFT<br>'
+                f'    <span style="font-size:12px;opacity:.75">Total load: <b>{total_cft:,.1f} CFT</b>'
+                f' &nbsp;·&nbsp; On <b>{best_v}</b> you can still add:'
+                f' <b>{rem["bag_shipments"]:,}</b> bag ships ·'
+                f' <b>{rem["semi"]:,}</b> semi · <b>{rem["totes"]:,}</b> totes</span>'
                 f'  </div>'
                 f'</div>'
                 f'{right_html}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
+        return total_cft, best_v
     elif sel_names:
         with main_box.container():
             st.success(f"✅ No pending floor load for {len(sel_names)} selected DH(s).")
+    return 0.0, None
 
 
 def main():
@@ -881,6 +977,20 @@ def main():
             st.session_state.sel_dh_names = []
             st.session_state.sel_cutoffs = new_sel
             st.rerun()
+
+        with st.expander("🚛 Vehicle max capacity", expanded=False):
+            st.caption("Max shipments per vehicle if loaded with only that type (CFT-based).")
+            st.dataframe(
+                build_vehicle_capacity_df(vcaps),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "CFT":               st.column_config.NumberColumn(format="%.1f"),
+                    "Max Bag Shipments": st.column_config.NumberColumn(format="%d"),
+                    "Max Semi Large":    st.column_config.NumberColumn(format="%d"),
+                    "Max Totes":         st.column_config.NumberColumn(format="%d"),
+                },
+            )
 
     DH_COL_CFG = {
         "Cut Off":             st.column_config.TextColumn(alignment="center"),
@@ -978,7 +1088,8 @@ def main():
             st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
         sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
-        render_prediction_box(main_box, sel_names, dh_loads_map, vcaps)
+        sel_load_cft, rec_v = render_prediction_box(main_box, sel_names, dh_loads_map, vcaps)
+        render_vehicle_capacity_table(vcaps, sel_load_cft, rec_v)
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
     else:
@@ -1021,7 +1132,8 @@ def main():
                 st.rerun()
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
 
-        render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps)
+        ready_load_cft, ready_rec_v = render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps)
+        render_vehicle_capacity_table(vcaps, ready_load_cft, ready_rec_v)
 
 
 def render_about_credits():
