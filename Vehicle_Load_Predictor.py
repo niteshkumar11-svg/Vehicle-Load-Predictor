@@ -547,6 +547,74 @@ def allowed_vcaps_for(max_size_str, vcaps):
     allowed = [(v, c) for v, c in vcaps if (_vehicle_size_num(v) or 0) <= max_num + 1e-6]
     return allowed if allowed else vcaps
 
+def _club_constraint_for(names, dh_max_vehicle):
+    """Most restrictive max-vehicle cap among selected DHs, or (None, 0)."""
+    hit = None
+    for nm in names:
+        mx = dh_max_vehicle.get(_norm(nm))
+        if not mx:
+            continue
+        num = _vehicle_size_num(mx)
+        if num is None:
+            continue
+        if hit is None or num < hit[0]:
+            label = next(
+                (v for v in _VEHICLE_CFT_MAP if _vehicle_size_num(v) == num),
+                mx,
+            )
+            hit = (num, label, _vehicle_cft(label))
+    return (hit[1], hit[2]) if hit else (None, 0)
+
+
+def _format_truck_label(breakdown):
+    if not breakdown:
+        return None
+    if len(breakdown) == 1:
+        return breakdown[0]["vehicle"]
+    parts = []
+    i = 0
+    while i < len(breakdown):
+        v = breakdown[i]["vehicle"]
+        n = 1
+        while i + n < len(breakdown) and breakdown[i + n]["vehicle"] == v:
+            n += 1
+        parts.append(f"{v} × {n}" if n > 1 else v)
+        i += n
+    return " + ".join(parts)
+
+
+def recommend_vehicle_constrained(load_cft, vcaps, constraint_label=None, constraint_cap=None):
+    """
+    Clubbed DHs with a max-vehicle constraint: allocate the first truck at the
+    constrained size, then recommend unconstrained vehicles for any overflow.
+    """
+    if load_cft <= 0 or not vcaps:
+        return None, 0, 0.0, 0, []
+    if not constraint_label or constraint_cap <= 0:
+        return recommend_vehicle(load_cft, vcaps)
+
+    breakdown = []
+    first_load = min(load_cft, constraint_cap)
+    breakdown.append({
+        "vehicle": constraint_label,
+        "capacity": constraint_cap,
+        "util_frac": first_load / constraint_cap if constraint_cap else 0.0,
+    })
+    remaining = load_cft - first_load
+    if remaining > 0:
+        _, _, _, _, rem_bd = recommend_vehicle(remaining, vcaps)
+        breakdown.extend(rem_bd)
+
+    last = breakdown[-1]
+    return (
+        _format_truck_label(breakdown),
+        last["capacity"],
+        last["util_frac"],
+        len(breakdown),
+        breakdown,
+    )
+
+
 def recommend_vehicle(load_cft, vcaps):
     """
     Pick the smallest vehicle whose CFT capacity fits the load (= highest utilisation).
@@ -753,7 +821,9 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
         load_cft = load_to_cft(merged_ld)
 
         max_v_str = dh_max_vehicle.get(_norm(dh_n))
-        rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(load_cft, vcaps)
+        rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(
+            load_cft, allowed_vcaps_for(max_v_str, vcaps)
+        )
 
         dh_rows.append({
             "Cut Off":             dr["cutoff_display"],
@@ -844,7 +914,7 @@ def _sync_sticky_spacer():
     )
 
 
-def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
+def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps, dh_max_vehicle=None):
     """
     Renders the combined Load Bifurcation + Recommended Vehicle prediction
     card into main_box (an st.empty()) for the given selected DH names.
@@ -860,7 +930,15 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
     truck_breakdown = []
 
     if total_ship:
-        best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_cft, vcaps)
+        c_label, c_cap = _club_constraint_for(sel_names, dh_max_vehicle or {})
+        if c_label:
+            best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle_constrained(
+                total_cft, vcaps, c_label, c_cap,
+            )
+        else:
+            best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(
+                total_cft, vcaps,
+            )
 
     if best_v is not None:
         util_pct = round(best_util * 100, 1)
@@ -1144,7 +1222,7 @@ def main():
             st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
         sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
-        render_prediction_box(main_box, sel_names, dh_loads_map, vcaps)
+        render_prediction_box(main_box, sel_names, dh_loads_map, vcaps, dh_max_vehicle)
         _sync_sticky_spacer()
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
@@ -1193,7 +1271,7 @@ def main():
                 st.rerun()
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
 
-        render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps)
+        render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps, dh_max_vehicle)
         _sync_sticky_spacer()
 
     # ── Tab 3: Vehicle max capacity reference ───────────────────────────────
