@@ -520,39 +520,34 @@ def allowed_vcaps_for(max_size_str, vcaps):
     allowed = [(v, c) for v, c in vcaps if (_vehicle_size_num(v) or 0) <= max_num + 1e-6]
     return allowed if allowed else vcaps
 
-def recommend_vehicle(total_frac, vcaps):
+def recommend_vehicle(load_cft, vcaps):
     """
-    Pick the smallest vehicle that fits the load (= highest utilisation).
+    Pick the smallest vehicle whose CFT capacity fits the load (= highest utilisation).
     Returns (vehicle_name, capacity, utilisation_frac, trucks_needed, truck_breakdown).
-    truck_breakdown is a list of {"vehicle", "capacity", "util_frac"} — one entry
-    per truck — so multi-truck loads can show utilisation separately per vehicle
-    instead of one blended number.
     """
-    max_cap  = max(c for _, c in vcaps)
-    req_cap  = total_frac * max_cap
-
-    if total_frac == 0:
+    if load_cft <= 0 or not vcaps:
         return None, 0, 0.0, 0, []
 
-    if total_frac > 1:
-        n = int(np.ceil(total_frac))
-        max_v = next(v for v, c in vcaps if c == max_cap)
-        rem_frac       = total_frac - (n - 1)
-        rem_cap        = rem_frac * max_cap
-        last_v, last_c = next(((v, c) for v, c in vcaps if c >= rem_cap), vcaps[-1])
-        last_util      = rem_cap / last_c if last_c else 0.0
+    max_cap = max(c for _, c in vcaps)
+    max_v   = next(v for v, c in vcaps if c == max_cap)
+
+    if load_cft > max_cap:
+        n       = int(np.ceil(load_cft / max_cap))
+        rem_cft = load_cft - (n - 1) * max_cap
+        last_v, last_c = next(((v, c) for v, c in vcaps if c >= rem_cft), vcaps[-1])
+        last_util = rem_cft / last_c if last_c else 0.0
         breakdown = [{"vehicle": max_v, "capacity": max_cap, "util_frac": 1.0} for _ in range(n - 1)]
         breakdown.append({"vehicle": last_v, "capacity": last_c, "util_frac": last_util})
         label = f"{max_v} × {n}" if last_v == max_v else f"{max_v} × {n-1} + {last_v}"
-        return label, max_cap, last_util, n, breakdown
+        return label, last_c, last_util, n, breakdown
 
     for v, c in vcaps:
-        if c >= req_cap:
-            util = req_cap / c if c else 0.0
+        if c >= load_cft:
+            util = load_cft / c if c else 0.0
             return v, c, util, 1, [{"vehicle": v, "capacity": c, "util_frac": util}]
 
     v, c = vcaps[-1]
-    util = req_cap / c if c else 0.0
+    util = load_cft / c if c else 0.0
     return v, c, util, 1, [{"vehicle": v, "capacity": c, "util_frac": util}]
 
 def remaining_to_target(current_equiv, vehicle_cap, max_cap, target=TARGET_UTIL):
@@ -666,11 +661,11 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
 
         merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
                          tote_count=ld["tote_count"], secondary_count=0)
-        frac = load_to_frac(merged_ld)
+        load_cft = load_to_cft(merged_ld)
 
         max_v_str = dh_max_vehicle.get(_norm(dh_n))
         dh_vcaps  = allowed_vcaps_for(max_v_str, vcaps)
-        rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(frac, dh_vcaps)
+        rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(load_cft, dh_vcaps)
 
         dh_rows.append({
             "Cut Off":             dr["cutoff_display"],
@@ -708,7 +703,7 @@ def agg_for(names, dh_loads_map):
     return a
 
 
-def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vcaps, max_cap):
+def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps):
     """
     Renders the combined Load Bifurcation + Recommended Vehicle prediction
     card into main_box (an st.empty()) for the given selected DH names.
@@ -716,45 +711,24 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
     """
     agg = agg_for(sel_names, dh_loads_map)
     total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"]
-    total_frac = load_to_frac(agg) if total_ship else 0.0
-    total_cft  = load_to_cft(agg)
-    req_equiv  = frac_to_equiv(total_frac, max_cap) if total_ship else 0
+    total_cft  = load_to_cft(agg) if total_ship else 0.0
     best_v = best_cap = best_util = n_trucks = None
     truck_breakdown = []
 
-    constrained_nums = [
-        n for n in (
-            _vehicle_size_num(dh_max_vehicle[_norm(dh_n)])
-            for dh_n in sel_names
-            if dh_max_vehicle.get(_norm(dh_n))
-        ) if n is not None
-    ]
-    min_constraint = min(constrained_nums) if constrained_nums else None
-    allowed = allowed_vcaps_for(f"{min_constraint} Ft" if min_constraint is not None else None, vcaps)
-
     if total_ship:
-        best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_frac, allowed)
-
-    ship_per_equiv = (total_ship / req_equiv) if req_equiv else 0
+        best_v, best_cap, best_util, n_trucks, truck_breakdown = recommend_vehicle(total_cft, vcaps)
 
     if best_v is not None:
         util_pct = round(best_util * 100, 1)
         conf_col = "#16a34a" if util_pct >= 75 else "#f59e0b" if util_pct >= 40 else "#ef4444"
-
-        best_real_cap = int(round(best_cap * ship_per_equiv)) if isinstance(best_cap, int) else None
-
-        # CFT tooltip: show load CFT vs vehicle CFT
-        veh_cft = round(best_cap, 1) if best_cap else 0
-        load_cft_str = f"{total_cft:,.1f}"
-        veh_cft_str  = f"{veh_cft:,.1f}"
 
         if len(truck_breakdown) > 1:
             util_lines = ""
             for i, tb in enumerate(truck_breakdown, start=1):
                 pct     = round(tb["util_frac"] * 100, 1)
                 tb_col  = "#4ade80" if pct >= 75 else "#fbbf24" if pct >= 40 else "#f87171"
-                tb_real = int(round(tb["capacity"] * ship_per_equiv))
                 tb_load_cft = round(tb["util_frac"] * tb["capacity"], 1)
+                tb_real = int(round(total_ship * tb_load_cft / total_cft)) if total_cft else 0
                 util_lines += (
                     f'<div style="font-size:14px;font-weight:800;margin-top:4px;color:{tb_col}">'
                     f'Truck {i} ({tb["vehicle"]}): {pct}%</div>'
@@ -771,6 +745,7 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vca
                 f'<div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
                 f'<div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">Load Utilization</div>'
                 f'<div style="font-size:28px;font-weight:900;color:{conf_col}">{util_pct}%</div>'
+                f'<div style="font-size:11px;opacity:.7;margin-top:2px">{total_cft:,.1f} / {best_cap:,.1f} CFT</div>'
                 f'</div>'
             )
 
@@ -827,8 +802,6 @@ def main():
         except Exception as e:
             st.error(f"❌ Could not load sheet: {e}")
             st.stop()
-
-    max_cap = max(c for _, c in vcaps)
 
     with st.spinner("Computing DH loads…"):
         all_dh_loads = compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh)
@@ -1005,7 +978,7 @@ def main():
             st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
         sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
-        render_prediction_box(main_box, sel_names, dh_loads_map, dh_max_vehicle, vcaps, max_cap)
+        render_prediction_box(main_box, sel_names, dh_loads_map, vcaps)
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
     else:
@@ -1048,7 +1021,7 @@ def main():
                 st.rerun()
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
 
-        render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, dh_max_vehicle, vcaps, max_cap)
+        render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps)
 
 
 def render_about_credits():
