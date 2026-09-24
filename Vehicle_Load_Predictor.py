@@ -604,11 +604,14 @@ def build_vehicle_capacity_df(vcaps, load_cft=0.0, highlight_vehicle=None):
         util    = (load_cft / cft * 100) if load_cft and cft else None
         label   = f"★ {v}" if hi_base and hi_base == v else v
         row = {
-            "Vehicle":           label,
-            "CFT":               round(cft, 1),
-            "Max Bag Shipments": max_cap["bag_shipments"],
-            "Max Semi Large":    max_cap["semi"],
-            "Max Totes":         max_cap["totes"],
+            "Vehicle":              label,
+            "CFT":                  round(cft, 1),
+            "Max Bag Shipments":    max_cap["bag_shipments"],
+            "Max Semi Large":       max_cap["semi"],
+            "Max Totes":            max_cap["totes"],
+            "Total Max Shipments":  (
+                max_cap["bag_shipments"] + max_cap["semi"] + max_cap["totes"]
+            ),
         }
         if load_cft:
             row["Add Bag Shipments"] = rem_cap["bag_shipments"]
@@ -619,35 +622,27 @@ def build_vehicle_capacity_df(vcaps, load_cft=0.0, highlight_vehicle=None):
         rows.append(row)
     return pd.DataFrame(rows)
 
-def render_vehicle_capacity_table(vcaps, load_cft=0.0, highlight_vehicle=None):
-    cap_df = build_vehicle_capacity_df(vcaps, load_cft, highlight_vehicle)
-    title  = (
-        "🚛 Vehicle-wise capacity — shipments you can still add (CFT-based)"
-        if load_cft else
-        "🚛 Vehicle-wise max shipment capacity (CFT-based)"
+VEHICLE_CAP_COL_CFG = {
+    "Vehicle":             st.column_config.TextColumn(alignment="center"),
+    "CFT":                 st.column_config.NumberColumn(format="%.1f", alignment="center"),
+    "Max Bag Shipments":   st.column_config.NumberColumn(format="%d", alignment="center"),
+    "Max Semi Large":      st.column_config.NumberColumn(format="%d", alignment="center"),
+    "Max Totes":           st.column_config.NumberColumn(format="%d", alignment="center"),
+    "Total Max Shipments": st.column_config.NumberColumn(format="%d", alignment="center"),
+}
+
+def render_vehicle_capacity_page(vcaps):
+    st.caption(
+        "Per-type maximums assume the full vehicle CFT is used for that type only. "
+        "Total Max Shipments = bag + semi-large + tote maximums combined."
     )
-    with st.expander(title, expanded=bool(load_cft)):
-        st.caption(
-            "Bag shipments = floor load in bags (30 ships/bag). "
-            "Add columns show remaining space after your current selection."
-            if load_cft else
-            "Maximum shipments each vehicle can hold if loaded with only that type."
-        )
-        st.dataframe(
-            cap_df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "CFT":                  st.column_config.NumberColumn(format="%.1f"),
-                "Max Bag Shipments":    st.column_config.NumberColumn(format="%d"),
-                "Max Semi Large":       st.column_config.NumberColumn(format="%d"),
-                "Max Totes":            st.column_config.NumberColumn(format="%d"),
-                "Add Bag Shipments":    st.column_config.NumberColumn(format="%d"),
-                "Add Semi Large":       st.column_config.NumberColumn(format="%d"),
-                "Add Totes":            st.column_config.NumberColumn(format="%d"),
-                "Load Util %":          st.column_config.NumberColumn(format="%.1f%%"),
-            },
-        )
+    st.dataframe(
+        build_vehicle_capacity_df(vcaps),
+        use_container_width=True,
+        hide_index=True,
+        height=420,
+        column_config=VEHICLE_CAP_COL_CFG,
+    )
 
 def _status_dot(util_pct):
     """🟢/🟡/🔴 status dot for a utilization percentage."""
@@ -946,51 +941,47 @@ def main():
             type="primary" if st.session_state.active_tab == "ready" else "secondary",
         ):
             st.session_state.active_tab = "ready"
+        if st.button(
+            "🚛 Vehicle Max Capacity", use_container_width=True,
+            type="primary" if st.session_state.active_tab == "capacity" else "secondary",
+        ):
+            st.session_state.active_tab = "capacity"
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
 
-        active_sel = st.session_state.get("sel_dh_names", []) if st.session_state.active_tab == "overview" else st.session_state.get("ready_sel_dh_names", [])
-        if active_sel:
-            st.markdown('<div class="sidebar-section-label">✅ Selected DHs</div>', unsafe_allow_html=True)
-            chips_html = "".join(
-                f'<div style="background:#eef2ff;color:#3730a3;border-radius:6px;'
-                f'padding:4px 8px;margin:3px 0;font-size:12px;font-weight:600;word-break:break-word">{n}</div>'
-                for n in active_sel
+        if st.session_state.active_tab in ("overview", "ready"):
+            active_sel = (
+                st.session_state.get("sel_dh_names", [])
+                if st.session_state.active_tab == "overview"
+                else st.session_state.get("ready_sel_dh_names", [])
             )
-            st.markdown(chips_html, unsafe_allow_html=True)
+            if active_sel:
+                st.markdown('<div class="sidebar-section-label">✅ Selected DHs</div>', unsafe_allow_html=True)
+                chips_html = "".join(
+                    f'<div style="background:#eef2ff;color:#3730a3;border-radius:6px;'
+                    f'padding:4px 8px;margin:3px 0;font-size:12px;font-weight:600;word-break:break-word">{n}</div>'
+                    for n in active_sel
+                )
+                st.markdown(chips_html, unsafe_allow_html=True)
 
-        st.markdown('<div class="sidebar-section-label">🕐 Select Cutoff</div>', unsafe_allow_html=True)
-        new_sel = []
-        for _, row in cutoff_tbl.iterrows():
-            co  = row["Cutoff"]
-            tot = row["Total Shipment"]
-            checked = st.checkbox(
-                f"{co} — {tot:,} ships",
-                value=(co in st.session_state.sel_cutoffs),
-                key=f"cutoff_chk_{co.replace(':','_')}",
-            )
-            if checked:
-                new_sel.append(co)
-        if new_sel != st.session_state.sel_cutoffs:
-            # Clear DH selection only if the cutoff set actually changed
-            st.session_state.sel_dh_names = []
-            st.session_state.sel_cutoffs = new_sel
-            st.rerun()
-
-        with st.expander("🚛 Vehicle max capacity", expanded=False):
-            st.caption("Max shipments per vehicle if loaded with only that type (CFT-based).")
-            st.dataframe(
-                build_vehicle_capacity_df(vcaps),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "CFT":               st.column_config.NumberColumn(format="%.1f"),
-                    "Max Bag Shipments": st.column_config.NumberColumn(format="%d"),
-                    "Max Semi Large":    st.column_config.NumberColumn(format="%d"),
-                    "Max Totes":         st.column_config.NumberColumn(format="%d"),
-                },
-            )
+        if st.session_state.active_tab == "overview":
+            st.markdown('<div class="sidebar-section-label">🕐 Select Cutoff</div>', unsafe_allow_html=True)
+            new_sel = []
+            for _, row in cutoff_tbl.iterrows():
+                co  = row["Cutoff"]
+                tot = row["Total Shipment"]
+                checked = st.checkbox(
+                    f"{co} — {tot:,} ships",
+                    value=(co in st.session_state.sel_cutoffs),
+                    key=f"cutoff_chk_{co.replace(':','_')}",
+                )
+                if checked:
+                    new_sel.append(co)
+            if new_sel != st.session_state.sel_cutoffs:
+                st.session_state.sel_dh_names = []
+                st.session_state.sel_cutoffs = new_sel
+                st.rerun()
 
     DH_COL_CFG = {
         "Cut Off":             st.column_config.TextColumn(alignment="center"),
@@ -1088,11 +1079,10 @@ def main():
             st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
         sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
-        sel_load_cft, rec_v = render_prediction_box(main_box, sel_names, dh_loads_map, vcaps)
-        render_vehicle_capacity_table(vcaps, sel_load_cft, rec_v)
+        render_prediction_box(main_box, sel_names, dh_loads_map, vcaps)
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
-    else:
+    elif st.session_state.active_tab == "ready":
         ready_summary_all, ready_loads_map = build_dh_rows(df_dh, all_dh_loads, dh_max_vehicle, vcaps)
         ready_summary = (
             ready_summary_all[ready_summary_all["Utilization %"] > 70]
@@ -1132,8 +1122,17 @@ def main():
                 st.rerun()
             ready_sel_names = [n for n in st.session_state.ready_sel_dh_names if n in ready_loads_map]
 
-        ready_load_cft, ready_rec_v = render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps)
-        render_vehicle_capacity_table(vcaps, ready_load_cft, ready_rec_v)
+        render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps)
+
+    # ── Tab 3: Vehicle max capacity reference ───────────────────────────────
+    else:
+        st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
+        st.markdown(
+            '<div style="font-size:20px;font-weight:700;text-align:center;padding:8px 0 12px">'
+            '🚛 Vehicle Max Capacity — CFT-based shipment limits</div>',
+            unsafe_allow_html=True,
+        )
+        render_vehicle_capacity_page(vcaps)
 
 
 def render_about_credits():
