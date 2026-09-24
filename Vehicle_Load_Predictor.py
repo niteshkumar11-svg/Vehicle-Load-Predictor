@@ -163,7 +163,7 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
     position:fixed!important; top:56px!important; left:284px!important; right:24px!important;
     width:calc(100vw - 308px)!important; max-width:calc(100vw - 308px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
-    z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:0;
+    z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:6px;
 }
 /* Reserves the space the fixed sticky block occupies — height is synced to the
    sticky element by _sync_sticky_spacer(); these values are fallbacks only. */
@@ -807,6 +807,7 @@ def _sync_sticky_spacer():
                     || df.parentElement
                 );
             }
+            const CLEARANCE = 12;
             function sync() {
                 const sticky = doc.querySelector(
                     ".st-key-pred_sticky, .st-key-ready_pred_sticky"
@@ -817,12 +818,13 @@ def _sync_sticky_spacer():
                 const wrap = tableWrap();
                 if (!sticky || !spacer) return;
                 const sh = Math.ceil(sticky.getBoundingClientRect().height);
-                if (sh > 0) spacer.style.height = sh + "px";
+                if (sh > 0) spacer.style.height = (sh + CLEARANCE) + "px";
                 if (!wrap) return;
                 wrap.classList.add("dh-table-pull");
                 const gap = wrap.getBoundingClientRect().top
                     - sticky.getBoundingClientRect().bottom;
-                wrap.style.marginTop = (gap > 0.5 ? -Math.round(gap) : 0) + "px";
+                const pull = Math.max(0, Math.round(gap) - CLEARANCE);
+                wrap.style.marginTop = (pull > 0 ? -pull : 0) + "px";
             }
             sync();
             requestAnimationFrame(sync);
@@ -1112,7 +1114,7 @@ def main():
                 st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
             else:
                 st.markdown(
-                    f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0 0;margin:0">'
+                    f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0 2px;margin:0">'
                     f'🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load</div>',
                     unsafe_allow_html=True,
                 )
