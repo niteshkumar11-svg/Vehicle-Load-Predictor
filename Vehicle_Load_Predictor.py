@@ -807,7 +807,7 @@ def _sync_sticky_spacer():
                     || df.parentElement
                 );
             }
-            const CLEARANCE = 12;
+            const CLEARANCE = 14;
             function sync() {
                 const sticky = doc.querySelector(
                     ".st-key-pred_sticky, .st-key-ready_pred_sticky"
