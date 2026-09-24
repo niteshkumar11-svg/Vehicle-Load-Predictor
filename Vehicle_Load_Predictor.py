@@ -163,7 +163,7 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
     position:fixed!important; top:56px!important; left:284px!important; right:24px!important;
     width:calc(100vw - 308px)!important; max-width:calc(100vw - 308px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
-    z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:10px;
+    z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:0;
 }
 /* Reserves the space the fixed sticky block occupies — height is synced to the
    sticky element by _sync_sticky_spacer(); these values are fallbacks only. */
@@ -171,13 +171,18 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
 div:has(> .pred-sticky-spacer),div:has(> .pred-sticky-spacer-tall){
     margin:0!important; padding:0!important; min-height:0!important;
 }
-/* Kill the default gap Streamlit adds between block elements after the spacer */
+div[data-testid="stAppViewContainer"] div[data-testid="stVerticalBlock"]:has(.pred-sticky-spacer),
+div[data-testid="stAppViewContainer"] div[data-testid="stVerticalBlock"]:has(.pred-sticky-spacer-tall){
+    gap:0!important;
+}
+/* Kill Streamlit wrapper margin between spacer and the table */
 div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer) + div,
-div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer-tall) + div{
+div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer-tall) + div,
+div[data-testid="stElementContainer"]:has([data-testid="stDataFrame"]){
     margin-top:0!important; padding-top:0!important;
 }
-div[data-testid="stDataFrame"]{margin-top:0!important}
-div[data-testid="stDataFrame"] > div{margin-top:0!important}
+div[data-testid="stDataFrame"],div[data-testid="stDataFrame"] > div{margin:0!important;padding:0!important}
+.dh-table-pull{margin-top:0!important;padding-top:0!important}
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
 /* Base .klabel/.kvalue/.ksub are reused on white-background detail boxes
@@ -793,6 +798,15 @@ def _sync_sticky_spacer():
         <script>
         (function () {
             const doc = window.parent.document;
+            function tableWrap() {
+                const df = doc.querySelector('[data-testid="stDataFrame"]');
+                if (!df) return null;
+                return (
+                    df.closest('[data-testid="stElementContainer"]')
+                    || df.closest('[data-testid="stVerticalBlockBorderWrapper"]')
+                    || df.parentElement
+                );
+            }
             function sync() {
                 const sticky = doc.querySelector(
                     ".st-key-pred_sticky, .st-key-ready_pred_sticky"
@@ -800,9 +814,15 @@ def _sync_sticky_spacer():
                 const spacer = doc.querySelector(
                     ".pred-sticky-spacer, .pred-sticky-spacer-tall"
                 );
+                const wrap = tableWrap();
                 if (!sticky || !spacer) return;
-                const h = Math.ceil(sticky.getBoundingClientRect().height);
-                if (h > 0) spacer.style.height = h + "px";
+                const sh = Math.ceil(sticky.getBoundingClientRect().height);
+                if (sh > 0) spacer.style.height = sh + "px";
+                if (!wrap) return;
+                wrap.classList.add("dh-table-pull");
+                const gap = wrap.getBoundingClientRect().top
+                    - sticky.getBoundingClientRect().bottom;
+                wrap.style.marginTop = (gap > 0.5 ? -Math.round(gap) : 0) + "px";
             }
             sync();
             requestAnimationFrame(sync);
@@ -815,7 +835,7 @@ def _sync_sticky_spacer():
                     childList: true, subtree: true, attributes: true,
                 });
             }
-            [50, 150, 400].forEach((ms) => setTimeout(sync, ms));
+            [50, 150, 400, 800].forEach((ms) => setTimeout(sync, ms));
         })();
         </script>
         """,
@@ -1092,7 +1112,7 @@ def main():
                 st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
             else:
                 st.markdown(
-                    f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">'
+                    f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0 0;margin:0">'
                     f'🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load</div>',
                     unsafe_allow_html=True,
                 )
