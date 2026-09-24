@@ -166,18 +166,17 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
 }
 /* Reserves the space the box would have occupied in normal flow, since
    position:fixed removes it — otherwise content below jumps up underneath it. */
-.pred-sticky-spacer{height:218px; margin:0!important; padding:0!important}
-.pred-sticky-spacer-tall{height:318px; margin:0!important; padding:0!important}
+.pred-sticky-spacer{height:280px; margin:0!important; padding:0!important}
+.pred-sticky-spacer-tall{height:400px; margin:0!important; padding:0!important}
 @media (max-width:900px){
-    .pred-sticky-spacer{height:318px}
-    .pred-sticky-spacer-tall{height:418px}
+    .pred-sticky-spacer{height:360px}
+    .pred-sticky-spacer-tall{height:480px}
 }
 /* Kill the default gap Streamlit adds between block elements after the spacer */
 div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer) + div,
 div[data-testid="stVerticalBlock"] > div:has(> .pred-sticky-spacer-tall) + div{
     margin-top:0!important; padding-top:0!important;
 }
-.dh-breakdown-hdr{font-size:20px;font-weight:700;text-align:center;padding:0;margin:0 0 2px}
 div[data-testid="stDataFrame"]{margin-top:0!important}
 .kcard{background:var(--ac);border-radius:14px;padding:16px 20px;
        box-shadow:0 4px 14px rgba(0,0,0,.15)}
@@ -1048,20 +1047,24 @@ def main():
 
             st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
 
+            if not sel_cutoffs:
+                st.markdown(
+                    '<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">🏭 DH Load Breakdown</div>',
+                    unsafe_allow_html=True,
+                )
+                st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
+            else:
+                st.markdown(
+                    f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">'
+                    f'🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load</div>',
+                    unsafe_allow_html=True,
+                )
+
         spacer_cls = (
             "pred-sticky-spacer-tall"
             if st.session_state.sel_dh_names and sel_cutoffs else "pred-sticky-spacer"
         )
         st.markdown(f'<div class="{spacer_cls}"></div>', unsafe_allow_html=True)
-
-        if not sel_cutoffs:
-            st.markdown('<div class="dh-breakdown-hdr">🏭 DH Load Breakdown</div>', unsafe_allow_html=True)
-            st.info("👈 Select a cutoff from the sidebar to see the DH breakdown.")
-        elif sel_cutoffs:
-            st.markdown(
-                f'<div class="dh-breakdown-hdr">🏭 DH Load Breakdown — {len(dh_summary)} DH(s) with pending load</div>',
-                unsafe_allow_html=True,
-            )
 
         if sel_cutoffs and not dh_summary.empty:
             dh_styled = dh_summary.style.map(_vehicle_badge_style, subset=["Recommended Vehicle"])
@@ -1102,13 +1105,14 @@ def main():
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             ready_main_box = st.empty()
             st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
+            n_ready = len(ready_summary)
+            st.markdown(
+                f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">'
+                f'🚀 Ready to Dispatch DHs — {n_ready} DH(s) over 70% utilization</div>',
+                unsafe_allow_html=True,
+            )
 
         st.markdown(f'<div class="{ready_spacer_cls}"></div>', unsafe_allow_html=True)
-        n_ready = len(ready_summary)
-        st.markdown(
-            f'<div class="dh-breakdown-hdr">🚀 Ready to Dispatch DHs — {n_ready} DH(s) over 70% utilization</div>',
-            unsafe_allow_html=True,
-        )
 
         ready_sel_names = []
         if ready_summary.empty:
