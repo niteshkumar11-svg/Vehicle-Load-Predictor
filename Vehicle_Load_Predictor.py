@@ -66,17 +66,14 @@ def _vehicle_cft(vehicle_label: str) -> float:
 #   Bags per 32Ft = 17,000 ships / 30 per bag = 566.7 bags  → CFT/bag = 2304/566.7 ≈ 4.07
 #   Semi per 32Ft = 1,800                                    → CFT/semi = 2304/1800 ≈ 1.28
 #   Totes per 32Ft = 650                                     → CFT/tote = 2304/650 ≈ 3.54
-#   Secondary per 32Ft = 14,235                              → CFT/sec = 2304/14235 ≈ 0.162
 BAG_SHIPMENTS_32FT = 17_000
 SEMI_32FT          = 1_800
 TOTES_32FT         = 650
-SECONDARY_32FT     = 14_235
 
 _32FT_CFT         = _VEHICLE_CFT_MAP["32 Ft"]                               # 2,304 CFT
 CFT_PER_BAG       = _32FT_CFT / (BAG_SHIPMENTS_32FT / SHIPMENTS_PER_BAG)    # ≈ 4.07
 CFT_PER_SEMI      = _32FT_CFT / SEMI_32FT                                    # ≈ 1.28
 CFT_PER_TOTE      = _32FT_CFT / TOTES_32FT                                   # ≈ 3.54
-CFT_PER_SECONDARY = _32FT_CFT / SECONDARY_32FT                               # ≈ 0.162
 
 
 DEFAULT_VEHICLE_CAPS = [
@@ -487,13 +484,13 @@ def compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh):
 
 
 def load_to_cft(load) -> float:
-    """Total CFT consumed by a load dict."""
-    bags = load["bag_shipments"] / SHIPMENTS_PER_BAG
+    """Total CFT consumed by a load dict (secondary folded into bags)."""
+    bag_ships = load["bag_shipments"] + load.get("secondary_count", 0)
+    bags = bag_ships / SHIPMENTS_PER_BAG
     return (
-        bags                    * CFT_PER_BAG
-        + load["semi_count"]    * CFT_PER_SEMI
-        + load["tote_count"]    * CFT_PER_TOTE
-        + load["secondary_count"] * CFT_PER_SECONDARY
+        bags                 * CFT_PER_BAG
+        + load["semi_count"] * CFT_PER_SEMI
+        + load["tote_count"] * CFT_PER_TOTE
     )
 
 def load_to_frac(load) -> float:
@@ -567,10 +564,9 @@ def breakdown_remaining(equiv_remaining, max_cap):
     """Express remaining equivalent capacity as bags / semi-large / totes."""
     frac = equiv_remaining / max_cap if max_cap else 0
     return dict(
-        bags      = int(frac * BAG_SHIPMENTS_32FT / SHIPMENTS_PER_BAG),
-        semi      = int(frac * SEMI_32FT),
-        totes     = int(frac * TOTES_32FT),
-        secondary = int(frac * SECONDARY_32FT),
+        bags  = int(frac * BAG_SHIPMENTS_32FT / SHIPMENTS_PER_BAG),
+        semi  = int(frac * SEMI_32FT),
+        totes = int(frac * TOTES_32FT),
     )
 
 def _status_dot(util_pct):
