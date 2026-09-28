@@ -891,8 +891,9 @@ def agg_for(names, dh_loads_map):
         sec_bags = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
         a["bag_count"]     += ld["bag_count"] + sec_bags
         a["bag_shipments"] += ld["bag_shipments"] + ld["secondary_count"]
-        a["semi_count"]    += ld["semi_count"]
-        a["tote_count"]    += ld["tote_count"]
+        a["semi_count"]       += ld["semi_count"]
+        a["tote_count"]       += ld["tote_count"]
+        a["secondary_count"]  += ld["secondary_count"]
     return a
 
 
@@ -920,52 +921,57 @@ def _bifurcation_lines_html(agg):
     )
 
 
+def _pendency_kpi_card_html(bag_count, bag_ships, semi_count, tote_count, secondary_count):
+    return (
+        f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
+        f'  <div style="text-align:center">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{bag_count:,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
+        f'  </div>'
+        f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{semi_count:,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
+        f'  </div>'
+        f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{tote_count:,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
+        f'  </div>'
+        f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
+        f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{secondary_count:,}</div>'
+        f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
+        f'  </div>'
+        f'</div>'
+    )
+
+
 def render_overall_pendency_box(main_box, df_bag, df_semi, df_tote, df_sec):
     """Hub-wide floor pendency when no cutoff is selected."""
     bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
     with main_box.container():
         st.markdown(
-            f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
-            f'  <div style="text-align:center">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
-            f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
-            f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
-            f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
-            f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
-            f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
-            f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
-            f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
-            f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
-            f'  </div>'
-            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
-            f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
-            f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
-            f'  </div>'
-            f'</div>',
+            _pendency_kpi_card_html(
+                len(df_bag), int(bag_ships), len(df_semi), len(df_tote), len(df_sec),
+            ),
             unsafe_allow_html=True,
         )
 
 
 def render_cutoff_bifurcation_box(main_box, cutoffs, df_dh, all_dh_loads):
-    """Load bifurcation for selected cutoff(s), before any DH row is selected."""
+    """Load bifurcation for selected cutoff(s) — same KPI layout as overall pendency."""
     agg = agg_for_cutoffs(cutoffs, df_dh, all_dh_loads)
-    co_label = ", ".join(sorted(cutoffs))
-    title = f"Cutoff {co_label}" if len(cutoffs) == 1 else f"Cutoffs {co_label}"
     with main_box.container():
         st.markdown(
-            f'<div class="predcard" style="display:flex;align-items:center;justify-content:center">'
-            f'<div style="flex:1;min-width:0;max-width:720px">'
-            f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {title}</div>'
-            f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
-            f'{_bifurcation_lines_html(agg)}'
-            f'  </div>'
-            f'</div>'
-            f'</div>',
+            _pendency_kpi_card_html(
+                agg["bag_count"],
+                agg["bag_shipments"],
+                agg["semi_count"],
+                agg["tote_count"],
+                agg["secondary_count"],
+            ),
             unsafe_allow_html=True,
         )
 
