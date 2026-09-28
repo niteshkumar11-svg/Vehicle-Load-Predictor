@@ -885,14 +885,89 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
 def agg_for(names, dh_loads_map):
     """Aggregate raw per-DH loads for a list of DH names (secondary folded into bags)."""
     a = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
+    empty = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
     for dh_n in names:
-        ld = dh_loads_map[dh_n]
+        ld = dh_loads_map.get(dh_n, empty)
         sec_bags = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
         a["bag_count"]     += ld["bag_count"] + sec_bags
         a["bag_shipments"] += ld["bag_shipments"] + ld["secondary_count"]
         a["semi_count"]    += ld["semi_count"]
         a["tote_count"]    += ld["tote_count"]
     return a
+
+
+def agg_for_cutoffs(cutoffs, df_dh, all_dh_loads):
+    """Aggregate floor load for all DHs in the selected cutoff(s)."""
+    if not cutoffs or df_dh.empty:
+        return agg_for([], {})
+    names = (
+        df_dh.loc[df_dh["cutoff_display"].isin(cutoffs), "dh_name"]
+        .astype(str).drop_duplicates().tolist()
+    )
+    return agg_for(names, all_dh_loads)
+
+
+def _bifurcation_lines_html(agg):
+    total_cft = load_to_cft(agg)
+    bag_cft = (agg["bag_shipments"] / SHIPMENTS_PER_BAG) * CFT_PER_BAG
+    semi_cft = agg["semi_count"] * CFT_PER_SEMI
+    tote_cft = agg["tote_count"] * CFT_PER_TOTE
+    return (
+        f'    🛍️ <b>{agg["bag_count"]:,}</b> bags &nbsp;({agg["bag_shipments"]:,} shipments · <b>{bag_cft:,.1f}</b> CFT)<br>'
+        f'    📦 <b>{agg["semi_count"]:,}</b> semi-large shipments · <b>{semi_cft:,.1f}</b> CFT<br>'
+        f'    🧺 <b>{agg["tote_count"]:,}</b> totes · <b>{tote_cft:,.1f}</b> CFT<br>'
+        f'    <span style="font-size:12px;opacity:.75">Total load: <b>{total_cft:,.1f} CFT</b></span>'
+    )
+
+
+def render_overall_pendency_box(main_box, df_bag, df_semi, df_tote, df_sec):
+    """Hub-wide floor pendency when no cutoff is selected."""
+    bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
+    with main_box.container():
+        st.markdown(
+            f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
+            f'  <div style="text-align:center">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
+            f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
+            f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
+            f'  </div>'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
+            f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
+            f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
+            f'  </div>'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
+            f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
+            f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
+            f'  </div>'
+            f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
+            f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
+            f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
+            f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
+            f'  </div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_cutoff_bifurcation_box(main_box, cutoffs, df_dh, all_dh_loads):
+    """Load bifurcation for selected cutoff(s), before any DH row is selected."""
+    agg = agg_for_cutoffs(cutoffs, df_dh, all_dh_loads)
+    co_label = ", ".join(sorted(cutoffs))
+    title = f"Cutoff {co_label}" if len(cutoffs) == 1 else f"Cutoffs {co_label}"
+    with main_box.container():
+        st.markdown(
+            f'<div class="predcard" style="display:flex;align-items:center;justify-content:center">'
+            f'<div style="flex:1;min-width:0;max-width:720px">'
+            f'  <div style="font-size:13px;opacity:.8;font-weight:500">📦 Load Bifurcation — {title}</div>'
+            f'  <div style="font-size:14px;margin-top:8px;line-height:1.9">'
+            f'{_bifurcation_lines_html(agg)}'
+            f'  </div>'
+            f'</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _sync_sticky_spacer():
@@ -1085,14 +1160,6 @@ def main():
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = "overview"
 
-    cutoff_ship_totals = {}
-    for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
-        dh_n = str(dr["dh_name"])
-        co   = dr["cutoff_display"]
-        ld   = all_dh_loads.get(dh_n, dict(bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0))
-        tot  = ld["bag_shipments"] + ld["semi_count"] + ld["tote_count"] + ld["secondary_count"]
-        cutoff_ship_totals[co] = cutoff_ship_totals.get(co, 0) + tot
-
     cutoff_tbl = (
         df_dh.groupby("cutoff_display")
         .agg(DH_Count=("dh_name", "nunique"))
@@ -1101,8 +1168,6 @@ def main():
         .sort_values("Cutoff")
         .reset_index(drop=True)
     )
-    cutoff_tbl["Total Shipment"] = cutoff_tbl["Cutoff"].map(cutoff_ship_totals).fillna(0).astype(int)
-    cutoff_options = list(cutoff_tbl["Cutoff"])
 
     with st.sidebar:
         if st.button("📊 Overview", key="nav_overview", use_container_width=True):
@@ -1135,10 +1200,9 @@ def main():
             st.markdown('<div class="sidebar-section-label">🕐 Select Cutoff</div>', unsafe_allow_html=True)
             new_sel = []
             for _, row in cutoff_tbl.iterrows():
-                co  = row["Cutoff"]
-                tot = row["Total Shipment"]
+                co = row["Cutoff"]
                 checked = st.checkbox(
-                    f"{co} — {tot:,} ships",
+                    co,
                     value=(co in st.session_state.sel_cutoffs),
                     key=f"cutoff_chk_{co.replace(':','_')}",
                 )
@@ -1176,36 +1240,6 @@ def main():
         with st.container(key="pred_sticky"):
             st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             main_box = st.empty()
-
-            # Default content of main_box: KPI overview cards.
-            # render_prediction_box() replaces this when DHs are selected.
-            bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
-            with main_box.container():
-                st.markdown(
-                    f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
-                    f'  <div style="text-align:center">'
-                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🛍️ Total Bags on Floor</div>'
-                    f'    <div style="font-size:30px;font-weight:900;color:#f59e0b">{len(df_bag):,}</div>'
-                    f'    <div style="font-size:12px;opacity:.7">{bag_ships:,} shipments</div>'
-                    f'  </div>'
-                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📦 Semi-Large Shipments</div>'
-                    f'    <div style="font-size:30px;font-weight:900;color:#60a5fa">{len(df_semi):,}</div>'
-                    f'    <div style="font-size:12px;opacity:.7">Floor pending</div>'
-                    f'  </div>'
-                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">🧺 Totes on Floor</div>'
-                    f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{len(df_tote):,}</div>'
-                    f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
-                    f'  </div>'
-                    f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-                    f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
-                    f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{len(df_sec):,}</div>'
-                    f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
-                    f'  </div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
 
             st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
 
@@ -1248,7 +1282,12 @@ def main():
             st.success("✅ No pending floor load for any DH in the selected cutoff.")
 
         sel_names = [n for n in st.session_state.sel_dh_names if n in dh_loads_map]
-        render_prediction_box(main_box, sel_names, dh_loads_map, vcaps, dh_max_vehicle)
+        if sel_names:
+            render_prediction_box(main_box, sel_names, dh_loads_map, vcaps, dh_max_vehicle)
+        elif sel_cutoffs:
+            render_cutoff_bifurcation_box(main_box, sel_cutoffs, df_dh, all_dh_loads)
+        else:
+            render_overall_pendency_box(main_box, df_bag, df_semi, df_tote, df_sec)
         _sync_sticky_spacer()
 
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
