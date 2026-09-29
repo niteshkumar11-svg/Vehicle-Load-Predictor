@@ -219,7 +219,7 @@ header[data-testid="stHeader"] [data-testid="stStatusWidget"]{
 .fk-header-brand{
     position:fixed; top:0; right:0; z-index:9999999;
     width:196px; min-height:56px; box-sizing:border-box;
-    background:#ffffff; border-left:1px solid #e8ecf1;
+    background:#f0f2f6; border-left:1px solid #e2e8f0;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:2px; padding:5px 10px 4px; line-height:1.1;
     pointer-events:auto;
