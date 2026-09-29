@@ -203,26 +203,34 @@ div[data-testid="stDataFrame"],div[data-testid="stDataFrame"] > div{margin:0!imp
           margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
 
 /* Dashboard name pinned in the sticky app header — always visible, never scrolls away */
-header[data-testid="stHeader"]{height:56px;padding-right:172px!important}
+header[data-testid="stHeader"]{height:56px}
 header[data-testid="stHeader"]::before{
     content:"🚛  Vehicle Load Prediction Dashboard";
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     font-size:24px; font-weight:800; color:#1e293b; white-space:nowrap;
     pointer-events:none;
 }
-/* Flipkart logo + developer credit — top banner, left of Streamlit toolbar */
-.fk-header-brand{
-    position:fixed; top:7px; right:78px; z-index:999998;
-    display:flex; flex-direction:column; align-items:flex-end; gap:1px;
-    pointer-events:none; line-height:1.1;
+/* Hide Streamlit header toolbar under branded cover (Share / Stop / menu) */
+header[data-testid="stHeader"] [data-testid="stToolbar"],
+header[data-testid="stHeader"] [data-testid="stStatusWidget"]{
+    visibility:hidden!important; pointer-events:none!important;
 }
-.fk-header-brand img{height:27px;width:auto;display:block}
+/* Flipkart logo panel — covers top-right toolbar area */
+.fk-header-brand{
+    position:fixed; top:0; right:0; z-index:9999999;
+    width:196px; min-height:56px; box-sizing:border-box;
+    background:#ffffff; border-left:1px solid #e8ecf1;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; padding:5px 10px 4px; line-height:1.1;
+    pointer-events:auto;
+}
+.fk-header-brand .fk-logo-svg{height:34px;width:auto;display:block}
 .fk-header-brand .fk-dev{
     font-size:10px; font-weight:500; color:#94a3b8; white-space:nowrap;
 }
 @media (max-width:900px){
-    .fk-header-brand{display:none}
-    header[data-testid="stHeader"]{padding-right:0!important}
+    .fk-header-brand{width:148px; min-height:52px}
+    .fk-header-brand .fk-logo-svg{height:28px}
 }
 
 /* Sidebar buttons (nav + refresh): full width, consistent sizing */
@@ -255,11 +263,18 @@ section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
 </style>
 """, unsafe_allow_html=True)
 
+# Inline SVG (Flipkart wordmark + bag, 2015-style per 1000logos.net reference) — no hotlink.
+_FK_LOGO_SVG = (
+    '<svg class="fk-logo-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 190 44" role="img" aria-label="Flipkart">'
+    '<text x="0" y="31" font-family="Segoe UI, Arial, sans-serif" font-size="27" '
+    'font-weight="700" font-style="italic" fill="#2874F0">Flipkart</text>'
+    '<path fill="#FFE500" d="M145 6h36c2.2 0 4 1.8 4 4v26c0 2.2-1.8 4-4 4h-36c-2.2 0-4-1.8-4-4V10c0-2.2 1.8-4 4-4z"/>'
+    '<path fill="#2874F0" d="M157 14h6v3h-4.2c-1.5 0-2.8 1.2-2.8 2.8v1.4h7v3.2h-7v9.6h-3.4V18.2c0-3.4 2.8-6.2 6.2-6.2h3.2V14z"/>'
+    '</svg>'
+)
 st.markdown(
-    '<div class="fk-header-brand">'
-    '<img src="https://upload.wikimedia.org/wikipedia/en/7/7a/Flipkart_logo.png" alt="Flipkart" />'
-    '<div class="fk-dev">Developed by Nitesh Kumar</div>'
-    '</div>',
+    f'<div class="fk-header-brand">{_FK_LOGO_SVG}'
+    '<div class="fk-dev">Developed by Nitesh Kumar</div></div>',
     unsafe_allow_html=True,
 )
 
