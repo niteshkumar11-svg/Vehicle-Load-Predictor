@@ -5,9 +5,11 @@ Vehicle Load Prediction Dashboard  —  Flipkart · Hajipur Mother Hub
 • Manual vehicle selector with remaining-capacity breakdown
 """
 
+import base64
 import re
 import warnings
 from datetime import datetime
+from pathlib import Path
 from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
@@ -132,6 +134,18 @@ APP_BANNER_H = 68
 FK_SCRIPT_LOGO_URL = (
     "https://upload.wikimedia.org/wikipedia/commons/6/69/Flipkart_Logo_as_of_2025.png"
 )
+_APP_DIR = Path(__file__).resolve().parent
+_FK_LOGO_FILE = _APP_DIR / "flipkart_logo_2025.png"
+
+
+@st.cache_data(show_spinner=False)
+def _flipkart_logo_data_uri():
+    """Embed logo as data URI so it renders without external image hosts."""
+    logo_path = _FK_LOGO_FILE
+    if logo_path.is_file():
+        payload = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+        return f"data:image/png;base64,{payload}"
+    return FK_SCRIPT_LOGO_URL
 
 st.markdown("""
 <style>
@@ -258,13 +272,15 @@ section[data-testid="stSidebar"]{
     padding:7px 12px; border-radius:8px; white-space:nowrap;
 }
 .app-top-banner .fk-script-logo{
-    height:34px; width:auto; display:block; margin-left:4px;
+    position:absolute; right:12px; top:50%; transform:translateY(-50%);
+    height:36px; width:auto; display:block; z-index:5;
 }
 .app-top-banner .toolbar-cover{
-    position:absolute; top:0; right:0; width:88px; height:100%;
+    position:absolute; top:0; right:0; width:96px; height:100%;
     background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);
-    pointer-events:auto; z-index:2;
+    pointer-events:auto; z-index:3;
 }
+.app-top-banner .banner-right{padding-right:108px}
 @media (max-width:1100px){
     .app-top-banner .banner-right .data-pill:nth-child(2),
     .app-top-banner .btn-present{display:none}
@@ -333,8 +349,8 @@ def inject_app_top_banner(last_updated):
         f'  <div class="data-pill"><span class="dot-live"></span>Data as of {age}</div>'
         f'  <div class="data-pill"><span class="refresh-ico">↻</span>Refresh via sidebar</div>'
         f'  <span class="btn-present">🖥 Present</span>'
-        f'  <img class="fk-script-logo" src="{FK_SCRIPT_LOGO_URL}" alt="Flipkart" />'
         f'</div>'
+        f'<img class="fk-script-logo" src="{FK_SCRIPT_LOGO_URL}" alt="Flipkart" />'
         f'<div class="toolbar-cover" aria-hidden="true"></div>'
         f'</div>',
         unsafe_allow_html=True,
