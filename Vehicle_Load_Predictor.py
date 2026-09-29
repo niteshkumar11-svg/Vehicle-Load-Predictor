@@ -128,6 +128,10 @@ st.set_page_config(
 )
 
 SIDEBAR_WIDTH_PX = 260
+APP_BANNER_H = 68
+FK_SCRIPT_LOGO_URL = (
+    "https://upload.wikimedia.org/wikipedia/commons/6/69/Flipkart_Logo_as_of_2025.png"
+)
 
 st.markdown("""
 <style>
@@ -149,7 +153,7 @@ section[data-testid="stSidebar"]{
 button[data-testid="stSidebarCollapseButton"]{display:none!important}
 div[data-testid="stSidebarResizeHandle"]{display:none!important}
 /* Reduce the default top padding Streamlit adds below the sticky header */
-div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!important}
+div[data-testid="stAppViewContainer"] .block-container{padding-top:var(--app-banner-h)!important}
 /* Combined Prediction box + Selected DHs pinned to the top while scrolling.
    NOTE: position:sticky does NOT work here — Streamlit wraps every
    st.container() in its own shrink-to-fit wrapper div, which never gives a
@@ -160,7 +164,7 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:56px!importan
    (header credit, Refresh button). left is offset past the sidebar's
    width so the box doesn't render on top of/underneath it. */
 .st-key-pred_sticky, .st-key-ready_pred_sticky{
-    position:fixed!important; top:56px!important; left:284px!important; right:24px!important;
+    position:fixed!important; top:var(--app-banner-h)!important; left:284px!important; right:24px!important;
     width:calc(100vw - 308px)!important; max-width:calc(100vw - 308px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
     z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:8px;
@@ -202,35 +206,72 @@ div[data-testid="stDataFrame"],div[data-testid="stDataFrame"] > div{margin:0!imp
 .vcap-row{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;
           margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
 
-/* Dashboard name pinned in the sticky app header — always visible, never scrolls away */
-header[data-testid="stHeader"]{height:56px}
-header[data-testid="stHeader"]::before{
-    content:"🚛  Vehicle Load Prediction Dashboard";
-    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    font-size:24px; font-weight:800; color:#1e293b; white-space:nowrap;
-    pointer-events:none;
+:root{--app-banner-h:68px}
+/* Custom app banner replaces Streamlit header */
+header[data-testid="stHeader"]{display:none!important}
+section[data-testid="stSidebar"]{
+    top:var(--app-banner-h)!important;
+    height:calc(100vh - var(--app-banner-h))!important;
 }
-/* Hide Streamlit header toolbar under branded cover (Share / Stop / menu) */
-header[data-testid="stHeader"] [data-testid="stToolbar"],
-header[data-testid="stHeader"] [data-testid="stStatusWidget"]{
-    visibility:hidden!important; pointer-events:none!important;
+.app-top-banner{
+    position:fixed; top:0; left:0; right:0; height:var(--app-banner-h);
+    z-index:9999999; box-sizing:border-box;
+    background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);
+    border-bottom:1px solid #e2e8f0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 8px 0 14px; gap:12px;
 }
-/* Flipkart logo panel — covers top-right toolbar area */
-.fk-header-brand{
-    position:fixed; top:0; right:0; z-index:9999999;
-    width:196px; min-height:56px; box-sizing:border-box;
-    background:#f0f2f6; border-left:1px solid #e2e8f0;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:2px; padding:5px 10px 4px; line-height:1.1;
-    pointer-events:auto;
+.app-top-banner .banner-left{display:flex; align-items:center; gap:12px; min-width:0}
+.app-top-banner .brand-icon{
+    width:40px; height:40px; border-radius:10px; flex-shrink:0;
+    background:linear-gradient(145deg,#3b82f6,#1d4ed8);
+    color:#fff; font-weight:800; font-size:15px; letter-spacing:.5px;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 8px rgba(37,99,235,.35);
 }
-.fk-header-brand .fk-logo-svg{height:34px;width:auto;display:block}
-.fk-header-brand .fk-dev{
-    font-size:10px; font-weight:500; color:#94a3b8; white-space:nowrap;
+.app-top-banner .brand-title{
+    font-size:17px; font-weight:800; color:#0f172a; line-height:1.15; white-space:nowrap;
 }
-@media (max-width:900px){
-    .fk-header-brand{width:148px; min-height:52px}
-    .fk-header-brand .fk-logo-svg{height:28px}
+.app-top-banner .brand-sub{
+    font-size:10px; font-weight:600; color:#64748b; letter-spacing:.12em;
+    text-transform:uppercase; margin-top:2px; white-space:nowrap;
+}
+.app-top-banner .banner-right{
+    display:flex; align-items:center; gap:12px; flex-shrink:0;
+    margin-left:auto; padding-right:4px;
+}
+.app-top-banner .data-pill{
+    display:flex; align-items:center; gap:6px;
+    font-size:12px; font-weight:500; color:#64748b; white-space:nowrap;
+}
+.app-top-banner .dot-live{
+    width:8px; height:8px; border-radius:50%; background:#22c55e; flex-shrink:0;
+}
+.app-top-banner .refresh-ico{
+    width:28px; height:28px; border-radius:50%; border:1px solid #e2e8f0;
+    background:#fff; color:#64748b; font-size:14px; line-height:26px;
+    text-align:center; flex-shrink:0;
+}
+.app-top-banner .btn-present{
+    display:inline-flex; align-items:center; gap:6px;
+    background:#1e3a5f; color:#fff; font-size:12px; font-weight:600;
+    padding:7px 12px; border-radius:8px; white-space:nowrap;
+}
+.app-top-banner .fk-script-logo{
+    height:34px; width:auto; display:block; margin-left:4px;
+}
+.app-top-banner .toolbar-cover{
+    position:absolute; top:0; right:0; width:88px; height:100%;
+    background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);
+    pointer-events:auto; z-index:2;
+}
+@media (max-width:1100px){
+    .app-top-banner .banner-right .data-pill:nth-child(2),
+    .app-top-banner .btn-present{display:none}
+}
+@media (max-width:800px){
+    .app-top-banner .brand-sub{display:none}
+    .app-top-banner .fk-script-logo{height:28px}
 }
 
 /* Sidebar buttons (nav + refresh): full width, consistent sizing */
@@ -263,20 +304,42 @@ section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
 </style>
 """, unsafe_allow_html=True)
 
-# Inline SVG (Flipkart wordmark + bag, 2015-style per 1000logos.net reference) — no hotlink.
-_FK_LOGO_SVG = (
-    '<svg class="fk-logo-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 190 44" role="img" aria-label="Flipkart">'
-    '<text x="0" y="31" font-family="Segoe UI, Arial, sans-serif" font-size="27" '
-    'font-weight="700" font-style="italic" fill="#2874F0">Flipkart</text>'
-    '<path fill="#FFE500" d="M145 6h36c2.2 0 4 1.8 4 4v26c0 2.2-1.8 4-4 4h-36c-2.2 0-4-1.8-4-4V10c0-2.2 1.8-4 4-4z"/>'
-    '<path fill="#2874F0" d="M157 14h6v3h-4.2c-1.5 0-2.8 1.2-2.8 2.8v1.4h7v3.2h-7v9.6h-3.4V18.2c0-3.4 2.8-6.2 6.2-6.2h3.2V14z"/>'
-    '</svg>'
-)
-st.markdown(
-    f'<div class="fk-header-brand">{_FK_LOGO_SVG}'
-    '<div class="fk-dev">Developed by Nitesh Kumar</div></div>',
-    unsafe_allow_html=True,
-)
+def _relative_data_age(dt):
+    secs = max(0, int((datetime.now() - dt).total_seconds()))
+    if secs < 60:
+        return "just now"
+    mins = secs // 60
+    if mins < 60:
+        return f"{mins}m ago"
+    hrs = mins // 60
+    if hrs < 48:
+        return f"{hrs}h ago"
+    return dt.strftime("%d %b %Y")
+
+
+def inject_app_top_banner(last_updated):
+    """MH Control Tower–style top banner with Flipkart script logo."""
+    age = _relative_data_age(last_updated)
+    st.markdown(
+        f'<div class="app-top-banner">'
+        f'<div class="banner-left">'
+        f'  <div class="brand-icon">VL</div>'
+        f'  <div>'
+        f'    <div class="brand-title">Vehicle Load Predictor</div>'
+        f'    <div class="brand-sub">Flipkart · Vehicle Load Prediction</div>'
+        f'  </div>'
+        f'</div>'
+        f'<div class="banner-right">'
+        f'  <div class="data-pill"><span class="dot-live"></span>Data as of {age}</div>'
+        f'  <div class="data-pill"><span class="refresh-ico">↻</span>Refresh via sidebar</div>'
+        f'  <span class="btn-present">🖥 Present</span>'
+        f'  <img class="fk-script-logo" src="{FK_SCRIPT_LOGO_URL}" alt="Flipkart" />'
+        f'</div>'
+        f'<div class="toolbar-cover" aria-hidden="true"></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 
 def _service_creds():
     key = "gcp_service_account" if "gcp_service_account" in st.secrets else "GOOGLE_SERVICE_ACCOUNT"
@@ -1185,6 +1248,7 @@ def main():
             st.session_state[k] = v
 
     last_updated = tracker_last_updated(_key) or _data_fetched_at(_key)
+    inject_app_top_banner(last_updated)
     dh_h = 650
 
     if "active_tab" not in st.session_state:
