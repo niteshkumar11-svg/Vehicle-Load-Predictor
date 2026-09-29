@@ -203,23 +203,26 @@ div[data-testid="stDataFrame"],div[data-testid="stDataFrame"] > div{margin:0!imp
           margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
 
 /* Dashboard name pinned in the sticky app header — always visible, never scrolls away */
-header[data-testid="stHeader"]{height:56px}
+header[data-testid="stHeader"]{height:56px;padding-right:172px!important}
 header[data-testid="stHeader"]::before{
     content:"🚛  Vehicle Load Prediction Dashboard";
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     font-size:24px; font-weight:800; color:#1e293b; white-space:nowrap;
     pointer-events:none;
 }
-/* Small developer credit — pinned just BELOW the header's toolbar row
-   (Stop/Share/Star/Edit/GitHub/menu) so it never overlaps those controls,
-   including while the app is running and shows the "Stop" indicator. */
-.dev-credit{
-    position:fixed; top:58px; right:16px; z-index:999999;
-    font-size:11px; font-weight:500; color:#94a3b8; white-space:nowrap;
-    pointer-events:none; background:#f0f2f6;
+/* Flipkart logo + developer credit — top banner, left of Streamlit toolbar */
+.fk-header-brand{
+    position:fixed; top:7px; right:78px; z-index:999998;
+    display:flex; flex-direction:column; align-items:flex-end; gap:1px;
+    pointer-events:none; line-height:1.1;
 }
-@media (max-width:700px){
-    .dev-credit{display:none}
+.fk-header-brand img{height:27px;width:auto;display:block}
+.fk-header-brand .fk-dev{
+    font-size:10px; font-weight:500; color:#94a3b8; white-space:nowrap;
+}
+@media (max-width:900px){
+    .fk-header-brand{display:none}
+    header[data-testid="stHeader"]{padding-right:0!important}
 }
 
 /* Sidebar buttons (nav + refresh): full width, consistent sizing */
@@ -252,7 +255,13 @@ section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="dev-credit">Developed by Nitesh Kumar</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="fk-header-brand">'
+    '<img src="https://upload.wikimedia.org/wikipedia/en/7/7a/Flipkart_logo.png" alt="Flipkart" />'
+    '<div class="fk-dev">Developed by Nitesh Kumar</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 def _service_creds():
     key = "gcp_service_account" if "gcp_service_account" in st.secrets else "GOOGLE_SERVICE_ACCOUNT"
