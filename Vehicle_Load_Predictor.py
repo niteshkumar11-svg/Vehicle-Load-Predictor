@@ -648,11 +648,27 @@ def allowed_vcaps_for(max_size_str, vcaps):
     allowed = [(v, c) for v, c in vcaps if (_vehicle_size_num(v) or 0) <= max_num + 1e-6]
     return allowed if allowed else vcaps
 
+
+def _lookup_dh_max_vehicle(dh_name, dh_max_vehicle):
+    """Max vehicle size for a DH (exact normalized name, then fuzzy match on sheet keys)."""
+    if not dh_max_vehicle:
+        return None
+    key = _norm(dh_name)
+    if key in dh_max_vehicle:
+        return dh_max_vehicle[key]
+    best_sz, best_r = None, 0.0
+    for dk, sz in dh_max_vehicle.items():
+        r = SequenceMatcher(None, key, dk).ratio()
+        if r > best_r:
+            best_r, best_sz = r, sz
+    return best_sz if best_r >= 0.82 else None
+
+
 def _club_constraint_for(names, dh_max_vehicle):
     """Most restrictive max-vehicle cap among selected DHs, or (None, 0)."""
     hit = None
     for nm in names:
-        mx = dh_max_vehicle.get(_norm(nm))
+        mx = _lookup_dh_max_vehicle(nm, dh_max_vehicle or {})
         if not mx:
             continue
         num = _vehicle_size_num(mx)
@@ -684,39 +700,46 @@ def _format_truck_label(breakdown):
     return " + ".join(parts)
 
 
+def _plan_truck_breakdown(load_cft, vcaps):
+    """
+    Multi-truck plan within vcaps only: repeated full loads on the largest
+    allowed vehicle, then the smallest allowed truck that fits the remainder.
+    """
+    vcaps = sorted(vcaps, key=lambda x: x[1])
+    max_v, max_cap = vcaps[-1]
+    breakdown = []
+    remaining = load_cft
+    while remaining > max_cap:
+        breakdown.append({"vehicle": max_v, "capacity": max_cap, "util_frac": 1.0})
+        remaining -= max_cap
+    if remaining > 0:
+        for v, c in vcaps:
+            if c >= remaining:
+                breakdown.append({
+                    "vehicle": v, "capacity": c,
+                    "util_frac": remaining / c if c else 0.0,
+                })
+                break
+        else:
+            v, c = vcaps[-1]
+            breakdown.append({
+                "vehicle": v, "capacity": c,
+                "util_frac": min(1.0, remaining / c) if c else 0.0,
+            })
+    return breakdown
+
+
 def recommend_vehicle_constrained(load_cft, vcaps, constraint_label=None, constraint_cap=None):
     """
-    Clubbed DHs with a max-vehicle constraint.
-    • Load fits within the cap → smallest vehicle that fits the load (≤ max allowed).
-    • Load exceeds the cap → one full max-constraint truck, then unconstrained for overflow.
+    Clubbed DHs with a max-vehicle constraint: every truck must be ≤ the club cap
+    (most restrictive max among selected DHs with a Vehicle Capacity limit).
     """
     if load_cft <= 0 or not vcaps:
         return None, 0, 0.0, 0, []
     if not constraint_label or constraint_cap <= 0:
         return recommend_vehicle(load_cft, vcaps)
-
     allowed = allowed_vcaps_for(constraint_label, vcaps)
-    if load_cft <= constraint_cap:
-        return recommend_vehicle(load_cft, allowed)
-
-    breakdown = [{
-        "vehicle": constraint_label,
-        "capacity": constraint_cap,
-        "util_frac": 1.0,
-    }]
-    remaining = load_cft - constraint_cap
-    if remaining > 0:
-        _, _, _, _, rem_bd = recommend_vehicle(remaining, vcaps)
-        breakdown.extend(rem_bd)
-
-    last = breakdown[-1]
-    return (
-        _format_truck_label(breakdown),
-        last["capacity"],
-        last["util_frac"],
-        len(breakdown),
-        breakdown,
-    )
+    return recommend_vehicle(load_cft, allowed)
 
 
 def recommend_vehicle(load_cft, vcaps):
@@ -732,14 +755,11 @@ def recommend_vehicle(load_cft, vcaps):
     max_v   = next(v for v, c in vcaps if c == max_cap)
 
     if load_cft > max_cap:
-        n       = int(np.ceil(load_cft / max_cap))
-        rem_cft = load_cft - (n - 1) * max_cap
-        last_v, last_c = next(((v, c) for v, c in vcaps if c >= rem_cft), vcaps[-1])
-        last_util = rem_cft / last_c if last_c else 0.0
-        breakdown = [{"vehicle": max_v, "capacity": max_cap, "util_frac": 1.0} for _ in range(n - 1)]
-        breakdown.append({"vehicle": last_v, "capacity": last_c, "util_frac": last_util})
-        label = f"{max_v} × {n}" if last_v == max_v else f"{max_v} × {n-1} + {last_v}"
-        return label, last_c, last_util, n, breakdown
+        breakdown = _plan_truck_breakdown(load_cft, vcaps)
+        n = len(breakdown)
+        last = breakdown[-1]
+        label = _format_truck_label(breakdown)
+        return label, last["capacity"], last["util_frac"], n, breakdown
 
     for v, c in vcaps:
         if c >= load_cft:
@@ -941,7 +961,7 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
                          tote_count=ld["tote_count"], secondary_count=0)
         load_cft = load_to_cft(merged_ld)
 
-        max_v_str = dh_max_vehicle.get(_norm(dh_n))
+        max_v_str = _lookup_dh_max_vehicle(dh_n, dh_max_vehicle)
         rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(
             load_cft, allowed_vcaps_for(max_v_str, vcaps)
         )
