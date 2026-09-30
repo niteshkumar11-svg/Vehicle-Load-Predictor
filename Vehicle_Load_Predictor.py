@@ -142,8 +142,16 @@ _FK_LOGO_CANDIDATES = (
 )
 
 
+def _flipkart_logo_cache_key():
+    for logo_path in _FK_LOGO_CANDIDATES:
+        if logo_path.is_file():
+            st = logo_path.stat()
+            return f"{logo_path.name}:{st.st_mtime_ns}:{st.st_size}"
+    return "missing"
+
+
 @st.cache_data(show_spinner=False)
-def _flipkart_logo_data_uri():
+def _flipkart_logo_data_uri(_cache_key):
     """Embed logo as data URI so it renders without external image hosts."""
     for logo_path in _FK_LOGO_CANDIDATES:
         if not logo_path.is_file():
@@ -305,7 +313,7 @@ section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
 
 def inject_app_top_banner(_last_updated=None):
     """Top banner: app title (left) and embedded Flipkart logo (right)."""
-    logo_src = _flipkart_logo_data_uri()
+    logo_src = _flipkart_logo_data_uri(_flipkart_logo_cache_key())
     st.markdown(
         f'<div class="app-top-banner">'
         f'<div class="banner-left">'
