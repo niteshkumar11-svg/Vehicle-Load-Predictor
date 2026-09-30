@@ -250,20 +250,26 @@ section[data-testid="stSidebar"]{
     display:flex; align-items:center; justify-content:space-between;
     padding:0 8px 0 14px; gap:12px;
 }
-.app-top-banner .banner-left{display:flex; align-items:center; gap:12px; min-width:0}
-.app-top-banner .brand-icon{
-    width:40px; height:40px; border-radius:10px; flex-shrink:0;
-    background:linear-gradient(145deg,#3b82f6,#1d4ed8);
-    color:#fff; font-weight:800; font-size:15px; letter-spacing:.5px;
-    display:flex; align-items:center; justify-content:center;
-    box-shadow:0 2px 8px rgba(37,99,235,.35);
+.app-top-banner .banner-center{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    text-align:center; pointer-events:none; z-index:4; max-width:min(560px,52vw);
 }
 .app-top-banner .brand-title{
-    font-size:17px; font-weight:800; color:#0f172a; line-height:1.15; white-space:nowrap;
+    font-size:24px; font-weight:800; color:#0f172a; line-height:1.12; white-space:nowrap;
 }
 .app-top-banner .brand-sub{
-    font-size:10px; font-weight:600; color:#64748b; letter-spacing:.12em;
-    text-transform:uppercase; margin-top:2px; white-space:nowrap;
+    font-size:11px; font-weight:600; color:#64748b; letter-spacing:.12em;
+    text-transform:uppercase; margin-top:3px; white-space:nowrap;
+}
+/* Refresh control pinned to header left */
+.st-key-header_refresh_btn{
+    position:fixed!important; top:17px!important; left:12px!important;
+    z-index:10000001!important; width:auto!important; margin:0!important; padding:0!important;
+}
+.st-key-header_refresh_btn [data-testid="stVerticalBlock"]{gap:0!important}
+.st-key-header_refresh_btn button{
+    font-size:12px!important; padding:7px 14px!important; min-height:0!important;
+    height:auto!important; border-radius:8px!important; white-space:nowrap;
 }
 .app-top-banner .fk-script-logo{
     position:absolute; right:12px; top:50%; transform:translateY(-50%);
@@ -276,6 +282,7 @@ section[data-testid="stSidebar"]{
     pointer-events:auto; z-index:3;
 }
 @media (max-width:800px){
+    .app-top-banner .brand-title{font-size:19px}
     .app-top-banner .brand-sub{display:none}
     .app-top-banner .fk-script-logo{height:30px; max-width:150px}
     .app-top-banner .toolbar-cover{width:170px}
@@ -312,22 +319,26 @@ section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
 """, unsafe_allow_html=True)
 
 def inject_app_top_banner(_last_updated=None):
-    """Top banner: app title (left) and embedded Flipkart logo (right)."""
+    """Top banner: centered title and embedded Flipkart logo (right)."""
     logo_src = _flipkart_logo_data_uri(_flipkart_logo_cache_key())
     st.markdown(
         f'<div class="app-top-banner">'
-        f'<div class="banner-left">'
-        f'  <div class="brand-icon">VL</div>'
-        f'  <div>'
-        f'    <div class="brand-title">Vehicle Load Predictor</div>'
-        f'    <div class="brand-sub">Flipkart · Vehicle Load Prediction</div>'
-        f'  </div>'
+        f'<div class="banner-center">'
+        f'  <div class="brand-title">Vehicle Load Predictor</div>'
+        f'  <div class="brand-sub">Flipkart · Vehicle Load Prediction</div>'
         f'</div>'
         f'<img class="fk-script-logo" src="{logo_src}" alt="Flipkart" />'
         f'<div class="toolbar-cover" aria-hidden="true"></div>'
         f'</div>',
         unsafe_allow_html=True,
     )
+
+
+def render_header_refresh_button():
+    with st.container(key="header_refresh_btn"):
+        if st.button("🔄 Refresh Data", key="header_refresh"):
+            st.cache_data.clear()
+            st.rerun()
 
 
 def _service_creds():
@@ -1238,6 +1249,7 @@ def main():
 
     last_updated = tracker_last_updated(_key) or _data_fetched_at(_key)
     inject_app_top_banner(last_updated)
+    render_header_refresh_button()
     dh_h = 650
 
     if "active_tab" not in st.session_state:
@@ -1260,9 +1272,6 @@ def main():
         if st.button("🚛 Vehicle Max Capacity", key="nav_capacity", use_container_width=True):
             st.session_state.active_tab = "capacity"
         st.markdown(_sidebar_nav_css(st.session_state.active_tab), unsafe_allow_html=True)
-        if st.button("🔄 Refresh Data", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
 
         if st.session_state.active_tab in ("overview", "ready"):
             active_sel = (
