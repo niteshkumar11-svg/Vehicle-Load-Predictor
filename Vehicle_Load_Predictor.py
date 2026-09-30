@@ -135,15 +135,22 @@ FK_SCRIPT_LOGO_URL = (
     "https://upload.wikimedia.org/wikipedia/commons/6/69/Flipkart_Logo_as_of_2025.png"
 )
 _APP_DIR = Path(__file__).resolve().parent
-_FK_LOGO_FILE = _APP_DIR / "flipkart_logo_2025.png"
+_FK_LOGO_CANDIDATES = (
+    _APP_DIR / "flipkart_logo.png",
+    _APP_DIR / "flipkart_logo.svg",
+    _APP_DIR / "flipkart_logo_2025.png",
+)
 
 
 @st.cache_data(show_spinner=False)
 def _flipkart_logo_data_uri():
     """Embed logo as data URI so it renders without external image hosts."""
-    logo_path = _FK_LOGO_FILE
-    if logo_path.is_file():
+    for logo_path in _FK_LOGO_CANDIDATES:
+        if not logo_path.is_file():
+            continue
         payload = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+        if logo_path.suffix.lower() == ".svg":
+            return f"data:image/svg+xml;base64,{payload}"
         return f"data:image/png;base64,{payload}"
     return FK_SCRIPT_LOGO_URL
 
@@ -250,44 +257,20 @@ section[data-testid="stSidebar"]{
     font-size:10px; font-weight:600; color:#64748b; letter-spacing:.12em;
     text-transform:uppercase; margin-top:2px; white-space:nowrap;
 }
-.app-top-banner .banner-right{
-    display:flex; align-items:center; gap:12px; flex-shrink:0;
-    margin-left:auto; padding-right:4px;
-}
-.app-top-banner .data-pill{
-    display:flex; align-items:center; gap:6px;
-    font-size:12px; font-weight:500; color:#64748b; white-space:nowrap;
-}
-.app-top-banner .dot-live{
-    width:8px; height:8px; border-radius:50%; background:#22c55e; flex-shrink:0;
-}
-.app-top-banner .refresh-ico{
-    width:28px; height:28px; border-radius:50%; border:1px solid #e2e8f0;
-    background:#fff; color:#64748b; font-size:14px; line-height:26px;
-    text-align:center; flex-shrink:0;
-}
-.app-top-banner .btn-present{
-    display:inline-flex; align-items:center; gap:6px;
-    background:#1e3a5f; color:#fff; font-size:12px; font-weight:600;
-    padding:7px 12px; border-radius:8px; white-space:nowrap;
-}
 .app-top-banner .fk-script-logo{
     position:absolute; right:12px; top:50%; transform:translateY(-50%);
-    height:36px; width:auto; display:block; z-index:5;
+    height:38px; width:auto; max-width:200px; object-fit:contain;
+    display:block; z-index:5; background:transparent;
 }
 .app-top-banner .toolbar-cover{
-    position:absolute; top:0; right:0; width:96px; height:100%;
+    position:absolute; top:0; right:0; width:220px; height:100%;
     background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);
     pointer-events:auto; z-index:3;
 }
-.app-top-banner .banner-right{padding-right:108px}
-@media (max-width:1100px){
-    .app-top-banner .banner-right .data-pill:nth-child(2),
-    .app-top-banner .btn-present{display:none}
-}
 @media (max-width:800px){
     .app-top-banner .brand-sub{display:none}
-    .app-top-banner .fk-script-logo{height:28px}
+    .app-top-banner .fk-script-logo{height:30px; max-width:150px}
+    .app-top-banner .toolbar-cover{width:170px}
 }
 
 /* Sidebar buttons (nav + refresh): full width, consistent sizing */
@@ -320,22 +303,9 @@ section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
 </style>
 """, unsafe_allow_html=True)
 
-def _relative_data_age(dt):
-    secs = max(0, int((datetime.now() - dt).total_seconds()))
-    if secs < 60:
-        return "just now"
-    mins = secs // 60
-    if mins < 60:
-        return f"{mins}m ago"
-    hrs = mins // 60
-    if hrs < 48:
-        return f"{hrs}h ago"
-    return dt.strftime("%d %b %Y")
-
-
-def inject_app_top_banner(last_updated):
-    """MH Control Tower–style top banner with Flipkart script logo."""
-    age = _relative_data_age(last_updated)
+def inject_app_top_banner(_last_updated=None):
+    """Top banner: app title (left) and embedded Flipkart logo (right)."""
+    logo_src = _flipkart_logo_data_uri()
     st.markdown(
         f'<div class="app-top-banner">'
         f'<div class="banner-left">'
@@ -345,12 +315,7 @@ def inject_app_top_banner(last_updated):
         f'    <div class="brand-sub">Flipkart · Vehicle Load Prediction</div>'
         f'  </div>'
         f'</div>'
-        f'<div class="banner-right">'
-        f'  <div class="data-pill"><span class="dot-live"></span>Data as of {age}</div>'
-        f'  <div class="data-pill"><span class="refresh-ico">↻</span>Refresh via sidebar</div>'
-        f'  <span class="btn-present">🖥 Present</span>'
-        f'</div>'
-        f'<img class="fk-script-logo" src="{FK_SCRIPT_LOGO_URL}" alt="Flipkart" />'
+        f'<img class="fk-script-logo" src="{logo_src}" alt="Flipkart" />'
         f'<div class="toolbar-cover" aria-hidden="true"></div>'
         f'</div>',
         unsafe_allow_html=True,
