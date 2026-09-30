@@ -196,11 +196,11 @@ div[data-testid="stAppViewContainer"] .block-container{padding-top:var(--app-ban
     position:fixed!important; top:var(--app-banner-h)!important; left:284px!important; right:24px!important;
     width:calc(100vw - 308px)!important; max-width:calc(100vw - 308px)!important;
     flex:none!important; box-sizing:border-box!important; overflow-x:auto;
-    z-index:500; background:#f0f2f6; padding-top:8px; padding-bottom:8px;
+    z-index:500; background:#f0f2f6; padding-top:4px; padding-bottom:8px;
 }
 /* Reserves the space the fixed sticky block occupies — height is synced to the
    sticky element by _sync_sticky_spacer(); these values are fallbacks only. */
-.pred-sticky-spacer,.pred-sticky-spacer-tall{height:200px; margin:0!important; padding:0!important}
+.pred-sticky-spacer,.pred-sticky-spacer-tall{height:180px; margin:0!important; padding:0!important}
 div:has(> .pred-sticky-spacer),div:has(> .pred-sticky-spacer-tall){
     margin:0!important; padding:0!important; min-height:0!important;
 }
@@ -296,6 +296,14 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button{
 .sidebar-section-label{
     font-size:13px; font-weight:700; text-transform:uppercase;
     letter-spacing:.7px; color:#64748b; margin:12px 0 6px 2px;
+}
+.sidebar-data-refresh{
+    display:block; width:100%; box-sizing:border-box;
+    padding:10px 12px; margin:0 0 10px 0;
+    font-size:12px; font-weight:600; line-height:1.35;
+    color:#475569; background:#f1f5f9;
+    border:1px solid rgba(49,51,63,0.12); border-radius:8px;
+    text-align:center; pointer-events:none; user-select:none;
 }
 /* Cutoff checkboxes: larger label text */
 section[data-testid="stSidebar"] div[data-testid="stCheckbox"] label p{
@@ -831,6 +839,10 @@ VEHICLE_CAP_COL_CFG = {
     "Max Totes":           st.column_config.NumberColumn(format="%d", alignment="center"),
 }
 
+def _data_refreshed_label(dt):
+    return f"Data Refreshed at {dt.strftime('%d %b %Y, %I:%M %p')}"
+
+
 def _sidebar_nav_css(active_tab):
     nav = (("overview", "nav_overview"), ("ready", "nav_ready"), ("capacity", "nav_capacity"))
     rules = []
@@ -1285,6 +1297,12 @@ def main():
     )
 
     with st.sidebar:
+        st.markdown(
+            f'<div class="sidebar-data-refresh" role="status">'
+            f'{_data_refreshed_label(last_updated)}'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
         if st.button("📊 Overview", key="nav_overview", use_container_width=True):
             st.session_state.active_tab = "overview"
         if st.button("🚀 Ready to Dispatch", key="nav_ready", use_container_width=True):
@@ -1350,10 +1368,9 @@ def main():
 
         # Everything above the table is in the fixed container ──────────────
         with st.container(key="pred_sticky"):
-            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             main_box = st.empty()
 
-            st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
+            st.markdown("<hr style='margin:8px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
 
             if not sel_cutoffs:
                 st.markdown(
@@ -1416,9 +1433,8 @@ def main():
             if st.session_state.ready_sel_dh_names else "pred-sticky-spacer"
         )
         with st.container(key="ready_pred_sticky"):
-            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             ready_main_box = st.empty()
-            st.markdown("<hr style='margin:10px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
+            st.markdown("<hr style='margin:8px 0 6px;border:none;border-top:1px solid #e2e8f0'>", unsafe_allow_html=True)
             n_ready = len(ready_summary)
             st.markdown(
                 f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">'
@@ -1454,7 +1470,6 @@ def main():
     # ── Tab 3: Vehicle max capacity reference ───────────────────────────────
     else:
         with st.container(key="capacity_tab"):
-            st.caption(f"📅 Data last updated: {last_updated.strftime('%d %b %Y, %I:%M %p')}")
             st.markdown(
                 '<div class="vcap-hdr" style="font-size:20px;font-weight:700;text-align:center">'
                 '🚛 Vehicle Max Capacity — CFT-based shipment limits</div>',
