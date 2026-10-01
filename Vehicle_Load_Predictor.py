@@ -6,6 +6,7 @@ Vehicle Load Prediction Dashboard  —  Flipkart · Hajipur Mother Hub
 """
 
 import base64
+import io
 import re
 import warnings
 from datetime import datetime
@@ -1258,6 +1259,61 @@ def render_prediction_box(main_box, sel_names, dh_loads_map, vcaps, dh_max_vehic
     return 0.0, None
 
 
+def _agg_metrics(agg):
+    return [
+        ("Bags", agg["bag_count"]),
+        ("Bag Shipments", agg["bag_shipments"]),
+        ("Semi-Large Shipments", agg["semi_count"]),
+        ("Totes", agg["tote_count"]),
+        ("Secondary + Bagging Pending", agg["secondary_count"]),
+        ("Total Load (CFT)", round(load_to_cft(agg), 1)),
+    ]
+
+
+def _prediction_metrics(sel_names, loads_map, vcaps, dh_max_vehicle):
+    """Same numbers as render_prediction_box, as (metric, value) rows for export."""
+    agg = agg_for(sel_names, loads_map)
+    rows = [("Selected DHs", len(sel_names))] + _agg_metrics(agg)
+    total_ship = agg["bag_shipments"] + agg["semi_count"] + agg["tote_count"]
+    if not total_ship:
+        return rows
+    total_cft = load_to_cft(agg)
+    c_label, c_cap = _club_constraint_for(sel_names, dh_max_vehicle or {})
+    if c_label:
+        best_v, best_cap, best_util, n_trucks, tb = recommend_vehicle_constrained(total_cft, vcaps, c_label, c_cap)
+    else:
+        best_v, best_cap, best_util, n_trucks, tb = recommend_vehicle(total_cft, vcaps)
+    rows += [
+        ("Total Shipments", total_ship),
+        ("Recommended Vehicle", best_v),
+        ("Trucks Needed", n_trucks),
+    ]
+    if len(tb) > 1:
+        for i, t in enumerate(tb, start=1):
+            rows.append((f"Truck {i} ({t['vehicle']}) Utilization %", round(t["util_frac"] * 100, 1)))
+    else:
+        rows.append(("Load Utilization %", round(best_util * 100, 1)))
+    return rows
+
+
+def _build_export_xlsx(tab_label, summary_rows, table_df, selected_names, updated_label):
+    meta = [("View", tab_label), ("Data refreshed", updated_label)]
+    if selected_names:
+        meta.append(("Selected DH Names", ", ".join(selected_names)))
+    summary = pd.DataFrame(meta + list(summary_rows), columns=["Metric", "Value"])
+    summary["Value"] = summary["Value"].astype(str)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        summary.to_excel(xw, sheet_name="Summary", index=False)
+        if table_df is not None and not table_df.empty:
+            table_df.to_excel(xw, sheet_name="Table", index=False)
+        for ws in xw.book.worksheets:
+            for col in ws.columns:
+                w = max(len(str(c.value)) if c.value is not None else 0 for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max(w + 2, 10), 60)
+    return buf.getvalue()
+
+
 def main():
     with st.spinner("Loading data"):
         try:
@@ -1310,6 +1366,7 @@ def main():
         if st.button("🚛 Vehicle Max Capacity", key="nav_capacity", use_container_width=True):
             st.session_state.active_tab = "capacity"
         st.markdown(_sidebar_nav_css(st.session_state.active_tab), unsafe_allow_html=True)
+        export_slot = st.empty()  # filled at the end of each tab with the current view
 
         if st.session_state.active_tab in ("overview", "ready"):
             active_sel = (
@@ -1419,6 +1476,29 @@ def main():
             render_overall_pendency_box(main_box, df_bag, df_semi, df_tote, df_sec)
         _sync_sticky_spacer()
 
+        if sel_names:
+            ex_rows = _prediction_metrics(sel_names, dh_loads_map, vcaps, dh_max_vehicle)
+        elif sel_cutoffs:
+            ex_rows = [("Cutoffs", ", ".join(sel_cutoffs))] + _agg_metrics(agg_for_cutoffs(sel_cutoffs, df_dh, all_dh_loads))
+        else:
+            ex_rows = [
+                ("Bags", len(df_bag)),
+                ("Bag Shipments", int(df_bag["ship_count"].sum()) if not df_bag.empty else 0),
+                ("Semi-Large Shipments", len(df_semi)),
+                ("Totes", len(df_tote)),
+                ("Secondary + Bagging Pending", len(df_sec)),
+            ]
+        if sel_names:
+            ex_rows.insert(0, ("Cutoffs", ", ".join(sel_cutoffs)))
+        export_slot.download_button(
+            "⬇️ Export to Excel",
+            data=_build_export_xlsx("Overview", ex_rows, dh_summary, sel_names, _data_refreshed_label(last_updated)),
+            file_name=f"vehicle_load_overview_{datetime.now(ZoneInfo('Asia/Kolkata')):%Y%m%d_%H%M}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="export_overview",
+        )
+
     # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
     elif st.session_state.active_tab == "ready":
         ready_summary_all, ready_loads_map = build_dh_rows(df_dh, all_dh_loads, dh_max_vehicle, vcaps)
@@ -1467,6 +1547,20 @@ def main():
         render_prediction_box(ready_main_box, ready_sel_names, ready_loads_map, vcaps, dh_max_vehicle)
         _sync_sticky_spacer()
 
+        export_slot.download_button(
+            "⬇️ Export to Excel",
+            data=_build_export_xlsx(
+                "Ready to Dispatch",
+                _prediction_metrics(ready_sel_names, ready_loads_map, vcaps, dh_max_vehicle)
+                if ready_sel_names else [("DHs over 70% utilization", len(ready_summary))],
+                ready_summary, ready_sel_names, _data_refreshed_label(last_updated),
+            ),
+            file_name=f"vehicle_load_ready_{datetime.now(ZoneInfo('Asia/Kolkata')):%Y%m%d_%H%M}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="export_ready",
+        )
+
     # ── Tab 3: Vehicle max capacity reference ───────────────────────────────
     else:
         with st.container(key="capacity_tab"):
@@ -1476,6 +1570,18 @@ def main():
                 unsafe_allow_html=True,
             )
             render_vehicle_capacity_page(vcaps)
+        export_slot.download_button(
+            "⬇️ Export to Excel",
+            data=_build_export_xlsx(
+                "Vehicle Max Capacity", [("Vehicles", len(vcaps))],
+                build_vehicle_capacity_df(vcaps).drop(columns=["Total Max Shipments"], errors="ignore"),
+                [], _data_refreshed_label(last_updated),
+            ),
+            file_name=f"vehicle_max_capacity_{datetime.now(ZoneInfo('Asia/Kolkata')):%Y%m%d_%H%M}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="export_capacity",
+        )
 
 
 def render_about_credits():
