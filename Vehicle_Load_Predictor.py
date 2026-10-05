@@ -180,7 +180,8 @@ st.markdown("""
 section[data-testid="stSidebar"]{
     width:260px!important; min-width:260px!important; max-width:260px!important;
 }
-button[data-testid="stSidebarCollapseButton"]{display:none!important}
+button[data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapseButton"],
+[data-testid="stExpandSidebarButton"],[data-testid="stSidebarCollapsedControl"]{display:none!important}
 div[data-testid="stSidebarResizeHandle"]{display:none!important}
 /* Reduce the default top padding Streamlit adds below the sticky header */
 div[data-testid="stAppViewContainer"] .block-container{padding-top:var(--app-banner-h)!important}
@@ -1343,6 +1344,26 @@ def main():
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = "overview"
 
+    if "sb_open" not in st.session_state:
+        st.session_state.sb_open = True
+    if not st.session_state.sb_open:
+        # Custom collapse: hide the (still-rendered) sidebar, widen the fixed block,
+        # and show a floating button to bring the sidebar back.
+        st.markdown(
+            "<style>"
+            "section[data-testid='stSidebar']{display:none!important}"
+            ".st-key-pred_sticky,.st-key-ready_pred_sticky{left:72px!important;"
+            "width:calc(100vw - 96px)!important;max-width:calc(100vw - 96px)!important}"
+            ".st-key-sb_show{position:fixed!important;top:calc(var(--app-banner-h) + 8px);"
+            "left:12px;z-index:1000;width:auto!important}"
+            "</style>",
+            unsafe_allow_html=True,
+        )
+        with st.container(key="sb_show"):
+            if st.button("☰", key="sb_show_btn", help="Show sidebar"):
+                st.session_state.sb_open = True
+                st.rerun()
+
     cutoff_tbl = (
         df_dh.groupby("cutoff_display")
         .agg(DH_Count=("dh_name", "nunique"))
@@ -1366,6 +1387,9 @@ def main():
         if st.button("🚛 Vehicle Max Capacity", key="nav_capacity", use_container_width=True):
             st.session_state.active_tab = "capacity"
         st.markdown(_sidebar_nav_css(st.session_state.active_tab), unsafe_allow_html=True)
+        if st.button("« Hide sidebar", key="sb_hide", use_container_width=True):
+            st.session_state.sb_open = False
+            st.rerun()
         export_slot = st.empty()  # filled at the end of each tab with the current view
 
         if st.session_state.active_tab in ("overview", "ready"):
