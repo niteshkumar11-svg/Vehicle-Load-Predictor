@@ -1385,6 +1385,9 @@ def main():
     )
 
     with st.sidebar:
+        if st.button("❮", key="sb_hide", help="Hide sidebar"):
+            st.session_state.sb_open = False
+            st.rerun()
         st.markdown(
             f'<div class="sidebar-data-refresh" role="status">'
             f'{_data_refreshed_label(last_updated)}'
@@ -1398,9 +1401,6 @@ def main():
         if st.button("🚛 Vehicle Max Capacity", key="nav_capacity", use_container_width=True):
             st.session_state.active_tab = "capacity"
         st.markdown(_sidebar_nav_css(st.session_state.active_tab), unsafe_allow_html=True)
-        if st.button("❮", key="sb_hide", help="Hide sidebar"):
-            st.session_state.sb_open = False
-            st.rerun()
         export_slot = st.empty()  # filled at the end of each tab with the current view
 
         if st.session_state.active_tab in ("overview", "ready"):
