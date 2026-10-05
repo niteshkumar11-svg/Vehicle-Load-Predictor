@@ -1346,7 +1346,15 @@ def main():
 
     if "sb_open" not in st.session_state:
         st.session_state.sb_open = True
-    if not st.session_state.sb_open:
+    if st.session_state.sb_open:
+        # Force-open even if Streamlit's native collapse state is set (its toggle is hidden).
+        st.markdown(
+            "<style>section[data-testid='stSidebar'],section[data-testid='stSidebar'][aria-expanded='false']"
+            "{transform:none!important;margin-left:0!important;visibility:visible!important;"
+            "display:block!important;width:260px!important;min-width:260px!important}</style>",
+            unsafe_allow_html=True,
+        )
+    else:
         # Custom collapse: hide the (still-rendered) sidebar, widen the fixed block,
         # and show a floating button to bring the sidebar back.
         st.markdown(
