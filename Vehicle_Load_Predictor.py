@@ -425,6 +425,40 @@ def _df(vals, hdr=0):
 def _destcol(df):
     return next((c for c in df.columns if "dest" in c.lower()), None)
 
+
+def _raw_destination_names(*dfs):
+    """Return one display name per normalized destination found in raw load data."""
+    names = {}
+    for df in dfs:
+        if df.empty or "destination" not in df.columns:
+            continue
+        for value in df["destination"]:
+            name = str(value).strip()
+            if name and name.lower() not in ("nan", "none"):
+                names.setdefault(_norm(name), name)
+    return names
+
+
+def _dh_rows_for_raw_destinations(df_dh, *raw_dfs):
+    """Keep only DH-sheet rows whose DH name exists in raw load destinations."""
+    if df_dh.empty:
+        return df_dh
+    raw_names = _raw_destination_names(*raw_dfs)
+    master_rows = {}
+    for _, row in df_dh.iterrows():
+        master_rows.setdefault(_norm(row["dh_name"]), row)
+
+    rows = []
+    for normalized, raw_name in raw_names.items():
+        master_row = master_rows.get(normalized)
+        if master_row is None:
+            continue
+        row = master_row.to_dict()
+        row["dh_name"] = raw_name
+        rows.append(row)
+    return pd.DataFrame(rows, columns=df_dh.columns)
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def parse(_key):
     sheets = load_sheets()
@@ -491,6 +525,10 @@ def parse(_key):
                 d["cutoff_display"] = d["cutoff"].str[:5]
                 df_dh = d
 
+    # Raw load destinations are the source of truth. The DH sheet only supplies
+    # cutoff/code metadata for destinations that actually exist in Bag, Semi, or Tote.
+    df_dh = _dh_rows_for_raw_destinations(df_dh, df_bag, df_semi, df_tote)
+
     vehcap_v = _find(sheets, "vehicle capacity")
     dh_max_vehicle = {}
     if vehcap_v:
@@ -507,31 +545,6 @@ def parse(_key):
     return df_bag, df_semi, df_tote, vcaps, df_dh, dh_max_vehicle
 
 
-def _match(df, dh_name, nexthop=""):
-    """Slow path (row-by-row fuzzy scan) — kept for single-DH lookups only."""
-    if df.empty:
-        return df
-    targets = {_norm(dh_name)}
-    if nexthop and nexthop.lower() not in ("direct","null","nan",""):
-        targets.add(_norm(nexthop))
-    norms = df["destination"].apply(_norm)
-    exact = df[norms.isin(targets)]
-    if not exact.empty:
-        return exact
-    scores = norms.apply(lambda n: max(_fuzzy(n, t) for t in targets))
-    return df[scores >= 0.72]
-
-def dh_load(dh_name, nexthop, df_bag, df_semi, df_tote):
-    br  = _match(df_bag,  dh_name, nexthop)
-    sr  = _match(df_semi, dh_name, nexthop)
-    tr  = _match(df_tote, dh_name, nexthop)
-    return dict(
-        bag_count     = len(br),
-        bag_shipments = int(br["ship_count"].sum()) if not br.empty else 0,
-        semi_count    = len(sr),
-        tote_count    = len(tr),
-    )
-
 def _agg_by_dest(df, value_col=None):
     """Aggregate a destination-keyed df ONCE into {norm_dest: (row_count, value_sum)}."""
     if df.empty:
@@ -545,27 +558,9 @@ def _agg_by_dest(df, value_col=None):
         agg = {n: (int(c), 0) for n, c in g.items()}
     return agg, list(agg.keys())
 
-def _match_agg(dh_name, nexthop, agg, unique_norms):
-    """O(unique destinations) lookup instead of O(rows) — exact first, fuzzy fallback."""
-    if not agg:
-        return 0, 0
-    targets = {_norm(dh_name)}
-    if nexthop and nexthop.lower() not in ("direct", "null", "nan", ""):
-        targets.add(_norm(nexthop))
-
-    exact_hits = [t for t in targets if t in agg]
-    if exact_hits:
-        cnt = sum(agg[t][0] for t in exact_hits)
-        val = sum(agg[t][1] for t in exact_hits)
-        return cnt, val
-
-    cnt = val = 0
-    for n in unique_norms:
-        if max(_fuzzy(n, t) for t in targets) >= 0.72:
-            c, v = agg[n]
-            cnt += c
-            val += v
-    return cnt, val
+def _match_agg(dh_name, agg):
+    """Match a DH only to its exact normalized raw destination."""
+    return agg.get(_norm(dh_name), (0, 0))
 
 @st.cache_data(ttl=300, show_spinner=False)
 def compute_all_dh_loads(df_bag, df_semi, df_tote, df_dh):
@@ -573,17 +568,15 @@ def compute_all_dh_loads(df_bag, df_semi, df_tote, df_dh):
     Aggregates each source sheet by unique destination ONCE, then does
     O(unique destinations) lookups per DH instead of O(rows) — this is what
     makes 1000+ DHs load instantly instead of taking minutes."""
-    bag_agg, bag_norms   = _agg_by_dest(df_bag,  "ship_count")
-    semi_agg, semi_norms = _agg_by_dest(df_semi)
-    tote_agg, tote_norms = _agg_by_dest(df_tote)
+    bag_agg, _   = _agg_by_dest(df_bag,  "ship_count")
+    semi_agg, _  = _agg_by_dest(df_semi)
+    tote_agg, _  = _agg_by_dest(df_tote)
     result = {}
     for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
         dh_n = str(dr["dh_name"])
-        nx   = str(dr.get("nexthop", "")) if "nexthop" in dr.index else ""
-
-        bag_count, bag_ships = _match_agg(dh_n, nx, bag_agg,  bag_norms)
-        semi_count, _        = _match_agg(dh_n, nx, semi_agg, semi_norms)
-        tote_count, _        = _match_agg(dh_n, nx, tote_agg, tote_norms)
+        bag_count, bag_ships = _match_agg(dh_n, bag_agg)
+        semi_count, _        = _match_agg(dh_n, semi_agg)
+        tote_count, _        = _match_agg(dh_n, tote_agg)
         result[dh_n] = dict(
             bag_count       = bag_count,
             bag_shipments   = bag_ships,
