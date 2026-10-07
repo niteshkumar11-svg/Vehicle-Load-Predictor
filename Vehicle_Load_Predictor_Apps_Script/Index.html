@@ -1,0 +1,305 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{--blue:#1e3a8a;--blue2:#2563eb;--bg:#f0f2f6;--line:#c7d2fe;--muted:#64748b}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);font:13px Arial,sans-serif;color:#0f172a}
+    button{font:inherit;cursor:pointer}
+    #header{height:68px;position:fixed;top:0;left:0;right:0;z-index:20;background:#f8fafc;border-bottom:1px solid #dbe3ef}
+    #title{position:absolute;left:50%;top:8px;transform:translateX(-50%);text-align:center}
+    #title h1{font-size:20px;margin:0;font-weight:800}
+    #title div{font-size:9px;letter-spacing:1px;color:#64748b;margin-top:2px}
+    #logo{position:absolute;right:14px;top:16px;background:#ffe500;color:#0878ce;border-radius:3px;padding:3px 7px;font-weight:900;font-style:italic}
+    #refresh{position:absolute;left:8px;top:11px;padding:7px 12px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;color:#334155}
+    #refresh:disabled{opacity:.6;cursor:wait}
+    #sidebar{position:fixed;z-index:10;top:68px;bottom:0;left:0;width:260px;overflow:auto;background:#f8fafc;border-right:1px solid #dbe3ef;padding:10px 16px}
+    #main{margin-left:260px;padding:78px 16px 30px;min-width:700px}
+    .timestamp{padding:9px 8px;margin-bottom:9px;border:1px solid #e2e8f0;border-radius:7px;background:#f1f5f9;text-align:center;color:#475569;font-size:11px}
+    .nav{width:100%;padding:9px 8px;margin:0 0 8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;text-align:left}
+    .nav.active{background:#ff4b4b;color:#fff;border-color:#ff4b4b}
+    .section{margin:16px 0 6px 2px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px}
+    .cutoff{display:block;margin:8px 0;color:#334155}
+    .cutoff input{margin-right:7px}
+    .chip{padding:5px 7px;margin:4px 0;border-radius:6px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:600;word-break:break-word}
+    .export{width:100%;padding:9px 8px;margin:12px 0;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155}
+    .loading,.error{padding:18px;text-align:center;border-radius:10px;background:#fff}
+    .error{color:#b91c1c;border:1px solid #fecaca}
+    .sticky{position:sticky;top:68px;z-index:5;padding:0 0 8px;background:var(--bg)}
+    .kpi,.prediction{border-radius:12px;color:#fff;background:linear-gradient(110deg,#17396f,#2563eb);box-shadow:0 7px 18px #1e3a8a2b}
+    .kpi{display:flex;justify-content:space-around;gap:12px;padding:16px 12px}
+    .kpi-item{flex:1;text-align:center;border-left:1px solid #ffffff40}
+    .kpi-item:first-child{border-left:0}
+    .kpi-label{font-size:9px;opacity:.8;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .kpi-value{font-size:25px;font-weight:900;margin:7px 0 3px}
+    .kpi-sub{font-size:10px;opacity:.72}
+    .prediction{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:15px 20px}
+    .bif{flex:1;line-height:1.75}
+    .bif-title{font-size:12px;opacity:.8}
+    .bif-total{font-size:11px;opacity:.75}
+    .recommend{display:flex;align-items:center;gap:22px}
+    .recommend>div{border-left:1px solid #ffffff40;padding-left:20px;text-align:center}
+    .recommend>div:first-child{border-left:0}
+    .label{font-size:9px;opacity:.78;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .vehicle{font-size:28px;font-weight:900;margin-top:5px;white-space:nowrap}
+    .big{font-size:22px;font-weight:900;margin-top:5px}
+    .bar{height:7px;background:#fee2e2;border-radius:8px;overflow:hidden;margin-top:6px;min-width:80px}
+    .bar i{display:block;height:100%;background:#ef4444}
+    .heading{text-align:center;font-size:18px;font-weight:700;margin:7px 0 10px}
+    .hint{padding:16px;text-align:center;background:#fff;border-radius:9px;color:#475569}
+    .table-wrap{overflow:auto;background:#fff;border-radius:8px}
+    table{width:100%;border-collapse:collapse;min-width:930px}
+    th{background:#c7d2fe;color:#475569;font-size:10px;font-weight:700;white-space:nowrap}
+    th,td{border:1px solid #a5b4fc;padding:7px 6px;text-align:center;white-space:nowrap}
+    td{font-size:11px}
+    tr.selected{background:#eef2ff}
+    .vehicle-cell{font-weight:700;color:#1d4ed8}
+    .util{display:flex;align-items:center;gap:6px}
+    .util .bar{flex:1;margin:0;height:6px}
+    .util span{width:42px;text-align:right;font-size:10px;color:#475569}
+    .capacity table{min-width:600px}
+    .muted{color:#64748b;font-size:11px}
+    @media(max-width:900px){
+      #sidebar{width:220px}#main{margin-left:220px;min-width:640px}
+      .prediction{align-items:flex-start}.recommend{gap:10px}.vehicle{font-size:22px}
+    }
+  </style>
+</head>
+<body>
+  <header id="header">
+    <button id="refresh" onclick="refreshData()">🔄 Refresh Data</button>
+    <div id="title"><h1>Vehicle Load Predictor</h1><div>FLIPKART · VEHICLE LOAD PREDICTION</div></div>
+    <div id="logo">Flipkart ⚡</div>
+  </header>
+  <aside id="sidebar"></aside>
+  <main id="main"><div class="loading">Loading dashboard…</div></main>
+
+  <script>
+    const state = {data:null, tab:'overview', cutoffs:[], selected:[], loading:false};
+
+    function boot(){
+      google.script.run.withSuccessHandler(setData).withFailureHandler(showError).getDashboardData();
+    }
+    function setData(data){
+      state.data=data; state.loading=false;
+      state.cutoffs=state.cutoffs.filter(c => data.cutoffs.includes(c));
+      state.selected=state.selected.filter(name => data.rows.some(row => row.name===name));
+      render();
+    }
+    function showError(error){
+      state.loading=false;
+      document.getElementById('main').innerHTML='<div class="error">Could not load dashboard data.<br><small>'+esc(error.message || error)+'</small></div>';
+    }
+    function refreshData(){
+      state.loading=true;
+      document.getElementById('refresh').disabled=true;
+      document.getElementById('refresh').textContent='Loading…';
+      google.script.run.withSuccessHandler(data=>{
+        document.getElementById('refresh').disabled=false;
+        document.getElementById('refresh').textContent='🔄 Refresh Data';
+        setData(data);
+      }).withFailureHandler(error=>{
+        document.getElementById('refresh').disabled=false;
+        document.getElementById('refresh').textContent='🔄 Refresh Data';
+        showError(error);
+      }).getDashboardData();
+    }
+
+    function render(){
+      renderSidebar();
+      if(!state.data) return;
+      const main=document.getElementById('main');
+      if(state.tab==='capacity'){renderCapacity(main);return}
+      if(state.tab==='ready'){renderReady(main);return}
+      renderOverview(main);
+    }
+    function renderSidebar(){
+      if(!state.data){return}
+      const data=state.data;
+      const selected=state.selected;
+      const cutoffs=data.cutoffs.map(c=>{
+        return '<label class="cutoff"><input type="checkbox" '+(state.cutoffs.includes(c)?'checked':'')+
+          ' onchange="toggleCutoff(\''+escAttr(c)+'\')">'+esc(c)+'</label>';
+      }).join('');
+      const chips=selected.map(name=>'<div class="chip">'+esc(name)+'</div>').join('');
+      document.getElementById('sidebar').innerHTML=
+        '<div class="timestamp">Data Refreshed at '+formatDate(data.updatedAt)+'</div>'+
+        navButton('overview','📊 Overview')+
+        navButton('ready','🚀 Ready to Dispatch')+
+        navButton('capacity','🚛 Vehicle Max Capacity')+
+        '<button class="export" onclick="exportCurrent()">⬇️ Export to CSV</button>'+
+        (selected.length?'<div class="section">✅ Selected DHs</div>'+chips:'')+
+        (state.tab==='overview'?'<div class="section">🕐 Select Cutoff</div>'+cutoffs:'');
+    }
+    function navButton(tab,label){
+      return '<button class="nav '+(state.tab===tab?'active':'')+'" onclick="switchTab(\''+tab+'\')">'+label+'</button>';
+    }
+    function switchTab(tab){
+      state.tab=tab; state.selected=[];
+      render();
+    }
+    function toggleCutoff(cutoff){
+      state.cutoffs=state.cutoffs.includes(cutoff)
+        ? state.cutoffs.filter(c=>c!==cutoff)
+        : state.cutoffs.concat(cutoff);
+      state.selected=[];
+      render();
+    }
+    function toggleRow(name){
+      state.selected=state.selected.includes(name)
+        ? state.selected.filter(item=>item!==name)
+        : state.selected.concat(name);
+      render();
+    }
+
+    function renderOverview(main){
+      const rows=state.data.rows.filter(row=>!state.cutoffs.length || state.cutoffs.includes(row.cutoff));
+      const selectedRows=rows.filter(row=>state.selected.includes(row.name));
+      const title=state.cutoffs.length
+        ? '🏭 DH Load Breakdown — '+rows.length+' DH(s) with pending load'
+        : '🏭 DH Load Breakdown';
+      let top=selectedRows.length ? predictionCard(selectedRows) :
+        (state.cutoffs.length ? kpiCard(aggregate(selectedRows.length?selectedRows:rows)) : kpiCard(state.data.overall));
+      let content=state.cutoffs.length
+        ? tableHtml(rows)
+        : '<div class="hint">👈 Select a cutoff from the sidebar to see the DH breakdown.</div>';
+      main.innerHTML='<section class="sticky">'+top+'</section><div class="heading">'+title+'</div>'+content;
+    }
+    function renderReady(main){
+      const rows=state.data.rows.filter(row=>row.utilization>70);
+      const selectedRows=rows.filter(row=>state.selected.includes(row.name));
+      const top=selectedRows.length?predictionCard(selectedRows):'<div class="hint">Select one or more DHs below to see the combined prediction.</div>';
+      main.innerHTML='<section class="sticky">'+top+'</section>'+
+        '<div class="heading">🚀 Ready to Dispatch DHs — '+rows.length+' DH(s) over 70% utilization</div>'+
+        (rows.length?tableHtml(rows):'<div class="hint">No DHs currently have a recommended-vehicle utilization above 70%.</div>');
+    }
+    function renderCapacity(main){
+      const rows=state.data.vehicleCaps;
+      const body=rows.map(row=>{
+        return '<tr><td>'+esc(row.vehicle)+'</td><td>'+row.capacity.toFixed(1)+'</td>'+
+          '<td>'+Math.floor(row.capacity/CFT_PER_BAG*SHIPMENTS_PER_BAG)+'</td>'+
+          '<td>'+Math.floor(row.capacity/CFT_PER_SEMI)+'</td>'+
+          '<td>'+Math.floor(row.capacity/CFT_PER_TOTE)+'</td></tr>';
+      }).join('');
+      main.innerHTML='<div class="heading">🚛 Vehicle Max Capacity — CFT-based shipment limits</div>'+
+        '<div class="muted">Per-type maximums assume the full vehicle CFT is used for that type only.</div>'+
+        '<div class="table-wrap capacity"><table><thead><tr><th>Vehicle</th><th>CFT</th><th>Max Bag Shipments</th><th>Max Semi Large</th><th>Max Totes</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+    }
+
+    function kpiCard(metrics){
+      return '<div class="kpi">'+
+        kpiItem('🛍️ Total Bags on Floor',metrics.bagCount,metrics.bagShipments.toLocaleString()+' shipments','#f59e0b')+
+        kpiItem('📦 Semi-Large Shipments',metrics.semiCount,'Floor pending','#60a5fa')+
+        kpiItem('🧺 Totes on Floor',metrics.toteCount,'Pending dispatch','#c4b5fd')+
+        '</div>';
+    }
+    function kpiItem(label,value,sub,color){
+      return '<div class="kpi-item"><div class="kpi-label">'+label+'</div><div class="kpi-value" style="color:'+color+'">'+
+        Number(value||0).toLocaleString()+'</div><div class="kpi-sub">'+sub+'</div></div>';
+    }
+    function predictionCard(rows){
+      const agg=aggregate(rows), plan=planFor(rows,agg);
+      const lines='<div class="bif-title">📦 Load Bifurcation — '+rows.length+' DH(s)</div>'+
+        '🛍️ <b>'+agg.bagCount.toLocaleString()+'</b> bags ('+agg.bagShipments.toLocaleString()+' shipments · '+bagCft(agg).toFixed(1)+' CFT)<br>'+
+        '📦 <b>'+agg.semiCount.toLocaleString()+'</b> semi-large shipments · '+(agg.semiCount*CFT_PER_SEMI).toFixed(1)+' CFT<br>'+
+        '🧺 <b>'+agg.toteCount.toLocaleString()+'</b> totes · '+(agg.toteCount*CFT_PER_TOTE).toFixed(1)+' CFT<br>'+
+        '<span class="bif-total">Total load: <b>'+plan.loadCft.toFixed(1)+' CFT</b></span>';
+      const trucks=plan.breakdown.map((truck,index)=>{
+        const pct=(truck.utilization*100).toFixed(1);
+        return '<div class="label">Truck '+(index+1)+' · '+esc(truck.vehicle)+'</div>'+
+          '<div class="big">'+pct+'%</div><div class="bar"><i style="width:'+Math.min(100,Number(pct))+'%"></i></div>';
+      }).join('');
+      return '<div class="prediction"><div class="bif">'+lines+'</div><div class="recommend">'+
+        '<div><div class="label">🎯 Recommended Vehicle</div><div class="vehicle">'+esc(plan.vehicle)+'</div></div>'+
+        '<div><div class="label">Utilization / Vehicle</div>'+trucks+'</div>'+
+        '<div><div class="label">Trucks Needed</div><div class="big">'+plan.breakdown.length+'</div></div>'+
+        '<div><div class="label">Total Shipments</div><div class="big">'+agg.totalShipments.toLocaleString()+'</div></div>'+
+        '</div></div>';
+    }
+    function tableHtml(rows){
+      const body=rows.map(row=>{
+        const checked=state.selected.includes(row.name);
+        const width=Math.min(100,Math.max(0,row.utilization));
+        return '<tr class="'+(checked?'selected':'')+'">'+
+          '<td><input type="checkbox" '+(checked?'checked':'')+' onchange="toggleRow(\''+escAttr(row.name)+'\')"></td>'+
+          '<td>'+esc(row.cutoff)+'</td><td>'+esc(row.code)+'</td><td>'+esc(row.name)+'</td>'+
+          '<td>'+row.bagCount.toLocaleString()+'</td><td>'+row.semiCount.toLocaleString()+'</td>'+
+          '<td>'+row.toteCount.toLocaleString()+'</td><td>'+row.totalShipments.toLocaleString()+'</td>'+
+          '<td>'+esc(row.maxVehicle)+'</td><td class="vehicle-cell">'+esc(row.recommendedVehicle)+'</td>'+
+          '<td><div class="util"><div class="bar"><i style="width:'+width+'%"></i></div><span>'+Number(row.utilization).toFixed(1)+'%</span></div></td></tr>';
+      }).join('');
+      return '<div class="table-wrap"><table><thead><tr><th></th><th>Cut Off</th><th>DH Code</th><th>DH Name</th>'+
+        '<th>Bag</th><th>Semi Large</th><th>Totes</th><th>Total Shipment</th><th>Max Vehicle Size</th>'+
+        '<th>Recommended Vehicle</th><th>Utilization %</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+    }
+
+    function aggregate(rows){
+      const result={bagCount:0,bagShipments:0,semiCount:0,toteCount:0,totalShipments:0};
+      rows.forEach(row=>{
+        result.bagCount+=Number(row.bagCount)||0;
+        result.bagShipments+=Number(row.bagShipments)||0;
+        result.semiCount+=Number(row.semiCount)||0;
+        result.toteCount+=Number(row.toteCount)||0;
+        result.totalShipments+=Number(row.totalShipments)||0;
+      });
+      return result;
+    }
+    function planFor(rows,agg){
+      const caps=state.data.vehicleCaps.slice().sort((a,b)=>a.capacity-b.capacity);
+      const limits=rows.map(row=>vehicleNumber(row.maxVehicle)).filter(number=>number!==null);
+      const max=limits.length?Math.min.apply(null,limits):null;
+      const allowed=max===null?caps:caps.filter(item=>vehicleNumber(item.vehicle)<=max+1e-6);
+      const plan=recommend(aggCft(agg),allowed.length?allowed:caps);
+      plan.loadCft=aggCft(agg);
+      return plan;
+    }
+    function recommend(loadCft,caps){
+      if(loadCft<=0||!caps.length)return {vehicle:'—',utilization:0,breakdown:[]};
+      const largest=caps[caps.length-1], breakdown=[];
+      if(loadCft<=largest.capacity){
+        const tail=caps.find(item=>item.capacity>=loadCft)||largest;
+        return {vehicle:tail.vehicle,utilization:loadCft/tail.capacity,breakdown:[{vehicle:tail.vehicle,capacity:tail.capacity,utilization:loadCft/tail.capacity}]};
+      }
+      let remaining=loadCft;
+      while(remaining>largest.capacity){breakdown.push({vehicle:largest.vehicle,capacity:largest.capacity,utilization:1});remaining-=largest.capacity}
+      const tail=caps.find(item=>item.capacity>=remaining)||largest;
+      breakdown.push({vehicle:tail.vehicle,capacity:tail.capacity,utilization:remaining/tail.capacity});
+      const labels=[];
+      breakdown.forEach(item=>{
+        const last=labels[labels.length-1];
+        if(last&&last.vehicle===item.vehicle)last.count+=1;else labels.push({vehicle:item.vehicle,count:1});
+      });
+      return {vehicle:labels.map(item=>item.count>1?item.vehicle+' × '+item.count:item.vehicle).join(' + '),utilization:breakdown[breakdown.length-1].utilization,breakdown:breakdown};
+    }
+    function aggCft(agg){return bagCft(agg)+agg.semiCount*CFT_PER_SEMI+agg.toteCount*CFT_PER_TOTE}
+    function bagCft(agg){return (agg.bagShipments/SHIPMENTS_PER_BAG)*CFT_PER_BAG}
+    function vehicleNumber(value){const match=String(value||'').match(/(\d+(?:\.\d+)?)/);return match?Number(match[1]):null}
+
+    function exportCurrent(){
+      if(!state.data)return;
+      let rows=state.tab==='ready'?state.data.rows.filter(row=>row.utilization>70):
+        state.tab==='overview'?state.data.rows.filter(row=>!state.cutoffs.length||state.cutoffs.includes(row.cutoff)):null;
+      if(state.tab==='capacity'){
+        rows=state.data.vehicleCaps.map(row=>({Vehicle:row.vehicle,CFT:row.capacity.toFixed(1)}));
+      }else{
+        rows=(rows||[]).map(row=>({'Cut Off':row.cutoff,'DH Code':row.code,'DH Name':row.name,'Bag':row.bagCount,'Semi Large':row.semiCount,'Totes':row.toteCount,'Total Shipment':row.totalShipments,'Max Vehicle Size':row.maxVehicle,'Recommended Vehicle':row.recommendedVehicle,'Utilization %':Number(row.utilization).toFixed(1)}));
+      }
+      const keys=Object.keys(rows[0]||{});
+      const csv=[keys].concat(rows.map(row=>keys.map(key=>csvValue(row[key])))).map(row=>row.join(',')).join('\n');
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+      const link=document.createElement('a');link.href=URL.createObjectURL(blob);
+      link.download='vehicle_load_'+state.tab+'_'+new Date().toISOString().slice(0,16).replace(/[-:T]/g,'')+'.csv';
+      link.click();URL.revokeObjectURL(link.href);
+    }
+    function csvValue(value){const text=String(value??'');return '"'+text.replace(/"/g,'""')+'"'}
+    function formatDate(value){return new Date(value).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:true})}
+    function esc(value){return String(value??'').replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]))}
+    function escAttr(value){return String(value??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
+    const SHIPMENTS_PER_BAG=30;
+    const CFT_PER_BAG=2304/(17000/SHIPMENTS_PER_BAG), CFT_PER_SEMI=2304/1800, CFT_PER_TOTE=2304/650;
+    boot();
+  </script>
+</body>
+</html>
