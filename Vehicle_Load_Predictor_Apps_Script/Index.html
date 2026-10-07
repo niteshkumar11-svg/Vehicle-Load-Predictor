@@ -123,6 +123,10 @@
         return '<label class="cutoff"><input type="checkbox" '+(state.cutoffs.includes(c)?'checked':'')+
           ' onchange="toggleCutoff(\''+escAttr(c)+'\')">'+esc(c)+'</label>';
       }).join('');
+      const cutoffMessage=data.cutoffs.length
+        ? cutoffs
+        : '<div class="muted">No cutoff rows detected.<br>DH sheet rows: '+data.diagnostics.cutoffSheetRows+
+          '<br>Raw destinations: '+data.diagnostics.rawDestinationCount+'</div>';
       const chips=selected.map(name=>'<div class="chip">'+esc(name)+'</div>').join('');
       document.getElementById('sidebar').innerHTML=
         '<div class="timestamp">Data Refreshed at '+formatDate(data.updatedAt)+'</div>'+
@@ -131,7 +135,7 @@
         navButton('capacity','🚛 Vehicle Max Capacity')+
         '<button class="export" onclick="exportCurrent()">⬇️ Export to CSV</button>'+
         (selected.length?'<div class="section">✅ Selected DHs</div>'+chips:'')+
-        (state.tab==='overview'?'<div class="section">🕐 Select Cutoff</div>'+cutoffs:'');
+        (state.tab==='overview'?'<div class="section">🕐 Select Cutoff</div>'+cutoffMessage:'');
     }
     function navButton(tab,label){
       return '<button class="nav '+(state.tab===tab?'active':'')+'" onclick="switchTab(\''+tab+'\')">'+label+'</button>';
