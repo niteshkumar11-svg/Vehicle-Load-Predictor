@@ -99,17 +99,24 @@
       state.loading=false;
       document.getElementById('main').innerHTML='<div class="error">Could not load dashboard data.<br><small>'+esc(error.message || error)+'</small></div>';
     }
-    function refreshData(){
+    function refreshData(silent){
       state.loading=true;
-      document.getElementById('refresh').disabled=true;
-      document.getElementById('refresh').textContent='Loading…';
+      const button=document.getElementById('refresh');
+      if(!silent){
+        button.disabled=true;
+        button.textContent='Loading…';
+      }
       google.script.run.withSuccessHandler(data=>{
-        document.getElementById('refresh').disabled=false;
-        document.getElementById('refresh').textContent='🔄 Refresh Data';
+        if(!silent){
+          button.disabled=false;
+          button.textContent='🔄 Refresh Data';
+        }
         setData(data);
       }).withFailureHandler(error=>{
-        document.getElementById('refresh').disabled=false;
-        document.getElementById('refresh').textContent='🔄 Refresh Data';
+        if(!silent){
+          button.disabled=false;
+          button.textContent='🔄 Refresh Data';
+        }
         showError(error);
       }).getDashboardData();
     }
@@ -325,6 +332,7 @@
     const SHIPMENTS_PER_BAG=30;
     const CFT_PER_BAG=2304/(17000/SHIPMENTS_PER_BAG), CFT_PER_SEMI=2304/1800, CFT_PER_TOTE=2304/650;
     window.addEventListener('resize',syncFrozenHeaders);
+    window.setInterval(()=>{if(!state.loading)refreshData(true)},60000);
     boot();
   </script>
 </body>
