@@ -17,6 +17,9 @@
     #refresh:disabled{opacity:.6;cursor:wait}
     #sidebar{position:fixed;z-index:10;top:68px;bottom:0;left:0;width:260px;overflow:auto;background:#f8fafc;border-right:1px solid #dbe3ef;padding:10px 16px}
     #main{margin-left:260px;padding:78px 16px 30px;min-width:700px}
+    #freeze-shield{display:none;position:fixed;z-index:4;top:68px;left:260px;right:0;
+      height:calc(var(--freeze-table-top,110px) - 68px);background:var(--bg);pointer-events:none}
+    html.has-frozen-table #freeze-shield{display:block}
     .timestamp{padding:9px 8px;margin-bottom:9px;border:1px solid #e2e8f0;border-radius:7px;background:#f1f5f9;text-align:center;color:#475569;font-size:11px}
     .nav{width:100%;padding:9px 8px;margin:0 0 8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;text-align:left}
     .nav.active{background:#ff4b4b;color:#fff;border-color:#ff4b4b}
@@ -76,6 +79,7 @@
     <div id="title"><h1>Vehicle Load Predictor</h1><div>FLIPKART · VEHICLE LOAD PREDICTION</div></div>
     <div id="logo">Flipkart ⚡</div>
   </header>
+  <div id="freeze-shield" aria-hidden="true"></div>
   <aside id="sidebar"></aside>
   <main id="main"><div class="loading">Loading dashboard…</div></main>
 
@@ -122,7 +126,11 @@
     function syncFrozenHeaders(){
       const prediction=document.querySelector('.sticky');
       const heading=document.querySelector('.heading');
-      if(!prediction||!heading)return;
+      if(!prediction||!heading){
+        document.documentElement.classList.remove('has-frozen-table');
+        return;
+      }
+      document.documentElement.classList.add('has-frozen-table');
       const predictionBottom=Math.ceil(prediction.getBoundingClientRect().bottom);
       document.documentElement.style.setProperty('--freeze-heading-top',predictionBottom+'px');
       const headingHeight=Math.ceil(heading.getBoundingClientRect().height);
