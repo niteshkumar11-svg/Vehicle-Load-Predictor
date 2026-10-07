@@ -132,8 +132,12 @@ function parseDh_(sheet) {
   });
   if (!cutoffHeader) return [];
 
-  const nameHeader = column_(headers, header => header === 'dh name' || header.includes('dh name'));
-  const codeHeader = column_(headers, header => header.includes('dh code') || header === 'code');
+  const nameHeader = column_(headers, header =>
+    header === 'dh name' || header.includes('dh name') || header === 'delivery hub'
+  );
+  const codeHeader = column_(headers, header =>
+    header.includes('dh code') || header === 'code' || header === 'coc'
+  );
   if (!nameHeader) return [];
   const rows = values.slice(headerRow + 1).map(valuesRow => {
     const row = {};
