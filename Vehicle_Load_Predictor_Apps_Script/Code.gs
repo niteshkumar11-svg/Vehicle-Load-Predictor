@@ -29,7 +29,8 @@ function getDashboardData() {
   const semi = parseRows_(findSheet_(ss, ['semi']), 'semi');
   const tote = parseRows_(findSheet_(ss, ['tote']), 'tote');
   const dhSheet = findSheet_(ss, ['dh name', 'cut-off', 'cutoff', 'dh']);
-  const dhRows = mapRawDestinationsToDh_(parseDh_(dhSheet), bag, semi, tote);
+  const masterDhRows = parseDh_(dhSheet);
+  const dhRows = mapRawDestinationsToDh_(masterDhRows, bag, semi, tote);
   const vehicleCaps = parseVehicleCaps_(findSheet_(ss, ['load capacity', 'capacity']));
   const maxVehicles = parseMaxVehicles_(findSheet_(ss, ['vehicle capacity']));
   const loads = computeLoads_(dhRows, bag, semi, tote);
@@ -45,7 +46,13 @@ function getDashboardData() {
       toteCount: tote.length,
     },
     rows: rows,
-    cutoffs: unique_(rows.map(row => row.cutoff)).sort(),
+    cutoffs: unique_(masterDhRows.map(row => row.cutoff)).sort(),
+    diagnostics: {
+      cutoffSheetRows: masterDhRows.length,
+      rawDestinationCount: unique_(bag.concat(semi, tote).map(row => normalize_(row.destination))).length,
+      matchedDhRows: dhRows.length,
+      loadRows: rows.length,
+    },
     vehicleCaps: vehicleCaps.map(item => ({vehicle: item.vehicle, capacity: item.capacity})),
     maxVehicles: maxVehicles,
   };
@@ -117,7 +124,8 @@ function parseDh_(sheet) {
     }
   }
   const headers = values[headerRow].map(value => String(value).trim());
-  const cutoffHeader = headers.find(header => {
+  const namedCutoffHeader = headers.find(header => /cut[\s-]*off|cutoff|time/i.test(header));
+  const cutoffHeader = namedCutoffHeader || headers.find(header => {
     const index = headers.indexOf(header);
     return values.slice(headerRow + 1, headerRow + 31)
       .filter(row => /^\d{1,2}:\d{2}/.test(String(row[index] || '').trim())).length >= 3;
