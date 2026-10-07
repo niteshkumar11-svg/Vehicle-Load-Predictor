@@ -11,7 +11,6 @@ import re
 import warnings
 from datetime import datetime
 from pathlib import Path
-from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -391,9 +390,6 @@ def _data_fetched_at(_key):
 def _norm(s):
     return re.sub(r"[_\s\-]+", "", str(s)).lower()
 
-def _fuzzy(a, b):
-    return SequenceMatcher(None, _norm(a), _norm(b)).ratio()
-
 def _find(sheets, *kws):
     for kw in kws:
         for name, vals in sheets.items():
@@ -624,18 +620,8 @@ def allowed_vcaps_for(max_size_str, vcaps):
 
 
 def _lookup_dh_max_vehicle(dh_name, dh_max_vehicle):
-    """Max vehicle size for a DH (exact normalized name, then fuzzy match on sheet keys)."""
-    if not dh_max_vehicle:
-        return None
-    key = _norm(dh_name)
-    if key in dh_max_vehicle:
-        return dh_max_vehicle[key]
-    best_sz, best_r = None, 0.0
-    for dk, sz in dh_max_vehicle.items():
-        r = SequenceMatcher(None, key, dk).ratio()
-        if r > best_r:
-            best_r, best_sz = r, sz
-    return best_sz if best_r >= 0.82 else None
+    """Return a max vehicle only for an exact normalized DH-name match."""
+    return (dh_max_vehicle or {}).get(_norm(dh_name))
 
 
 def _club_constraint_for(names, dh_max_vehicle):
