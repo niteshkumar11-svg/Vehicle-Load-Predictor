@@ -460,29 +460,6 @@ def parse(_key):
             df_tote["destination"] = df_tote["destination"].astype(str).str.strip()
             df_tote = df_tote[df_tote["destination"].notna() & (df_tote["destination"] != "nan")]
 
-    sec_v = _find(sheets, "secondary")
-    df_sec = pd.DataFrame()
-    if sec_v:
-        d = _df(sec_v)
-        nc = next((c for c in d.columns if "nexthop" in c.lower()), None)
-        if nc:
-            df_sec = d[[nc]].rename(columns={nc:"destination"})
-            df_sec["destination"] = df_sec["destination"].astype(str).str.strip()
-            df_sec = df_sec[df_sec["destination"].notna() & (df_sec["destination"] != "nan")]
-
-    bagging_v = _find(sheets, "bagging")
-    if bagging_v:
-        d = _df(bagging_v)
-        nc = next(
-            (c for c in d.columns if "facility" in c.lower() and "name" in c.lower() and "id" not in c.lower()),
-            None,
-        )
-        if nc:
-            df_bagging = d[[nc]].rename(columns={nc:"destination"})
-            df_bagging["destination"] = df_bagging["destination"].astype(str).str.strip()
-            df_bagging = df_bagging[df_bagging["destination"].notna() & (df_bagging["destination"] != "nan")]
-            df_sec = pd.concat([df_sec, df_bagging], ignore_index=True) if not df_sec.empty else df_bagging
-
     vcaps = _parse_vcaps(sheets)
 
     dh_v = _find(sheets, "dh name", "cut-off", "cutoff", "dh")
@@ -527,7 +504,7 @@ def parse(_key):
                 if nm and nm.lower() != "nan" and sz and sz.lower() != "nan":
                     dh_max_vehicle.setdefault(_norm(nm), sz)
 
-    return df_bag, df_semi, df_tote, df_sec, vcaps, df_dh, dh_max_vehicle
+    return df_bag, df_semi, df_tote, vcaps, df_dh, dh_max_vehicle
 
 
 def _match(df, dh_name, nexthop=""):
@@ -544,17 +521,15 @@ def _match(df, dh_name, nexthop=""):
     scores = norms.apply(lambda n: max(_fuzzy(n, t) for t in targets))
     return df[scores >= 0.72]
 
-def dh_load(dh_name, nexthop, df_bag, df_semi, df_tote, df_sec):
+def dh_load(dh_name, nexthop, df_bag, df_semi, df_tote):
     br  = _match(df_bag,  dh_name, nexthop)
     sr  = _match(df_semi, dh_name, nexthop)
     tr  = _match(df_tote, dh_name, nexthop)
-    secr= _match(df_sec,  dh_name, nexthop)
     return dict(
         bag_count     = len(br),
         bag_shipments = int(br["ship_count"].sum()) if not br.empty else 0,
         semi_count    = len(sr),
         tote_count    = len(tr),
-        secondary_count = len(secr),
     )
 
 def _agg_by_dest(df, value_col=None):
@@ -593,7 +568,7 @@ def _match_agg(dh_name, nexthop, agg, unique_norms):
     return cnt, val
 
 @st.cache_data(ttl=300, show_spinner=False)
-def compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh):
+def compute_all_dh_loads(df_bag, df_semi, df_tote, df_dh):
     """Pre-compute loads for every DH once and cache for 5 min.
     Aggregates each source sheet by unique destination ONCE, then does
     O(unique destinations) lookups per DH instead of O(rows) — this is what
@@ -601,8 +576,6 @@ def compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh):
     bag_agg, bag_norms   = _agg_by_dest(df_bag,  "ship_count")
     semi_agg, semi_norms = _agg_by_dest(df_semi)
     tote_agg, tote_norms = _agg_by_dest(df_tote)
-    sec_agg,  sec_norms  = _agg_by_dest(df_sec)
-
     result = {}
     for _, dr in df_dh.drop_duplicates("dh_name").iterrows():
         dh_n = str(dr["dh_name"])
@@ -611,22 +584,18 @@ def compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh):
         bag_count, bag_ships = _match_agg(dh_n, nx, bag_agg,  bag_norms)
         semi_count, _        = _match_agg(dh_n, nx, semi_agg, semi_norms)
         tote_count, _        = _match_agg(dh_n, nx, tote_agg, tote_norms)
-        sec_count, _         = _match_agg(dh_n, nx, sec_agg,  sec_norms)
-
         result[dh_n] = dict(
             bag_count       = bag_count,
             bag_shipments   = bag_ships,
             semi_count      = semi_count,
             tote_count      = tote_count,
-            secondary_count = sec_count,
         )
     return result
 
 
 def load_to_cft(load) -> float:
-    """Total CFT consumed by a load dict (secondary folded into bags)."""
-    bag_ships = load["bag_shipments"] + load.get("secondary_count", 0)
-    bags = bag_ships / SHIPMENTS_PER_BAG
+    """Total CFT consumed by bags, semi-large shipments, and totes."""
+    bags = load["bag_shipments"] / SHIPMENTS_PER_BAG
     return (
         bags                 * CFT_PER_BAG
         + load["semi_count"] * CFT_PER_SEMI
@@ -965,16 +934,15 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
     for _, dr in dh_source_df.drop_duplicates("dh_name").iterrows():
         dh_n = str(dr["dh_name"])
         ld   = all_dh_loads.get(dh_n, dict(bag_count=0, bag_shipments=0,
-                                           semi_count=0, tote_count=0, secondary_count=0))
+                                           semi_count=0, tote_count=0))
         dh_loads_map[dh_n] = ld
 
-        sec_bags        = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
-        total_bags      = ld["bag_count"] + sec_bags
-        total_bag_ships = ld["bag_shipments"] + ld["secondary_count"]
+        total_bags      = ld["bag_count"]
+        total_bag_ships = ld["bag_shipments"]
         total_ship_row  = total_bag_ships + ld["semi_count"] + ld["tote_count"]
 
         merged_ld = dict(bag_shipments=total_bag_ships, semi_count=ld["semi_count"],
-                         tote_count=ld["tote_count"], secondary_count=0)
+                         tote_count=ld["tote_count"])
         load_cft = load_to_cft(merged_ld)
 
         max_v_str = _lookup_dh_max_vehicle(dh_n, dh_max_vehicle)
@@ -1006,17 +974,15 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
 
 
 def agg_for(names, dh_loads_map):
-    """Aggregate raw per-DH loads for a list of DH names (secondary folded into bags)."""
-    a = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
-    empty = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0, secondary_count=0)
+    """Aggregate raw bag, semi-large, and tote loads for selected DHs."""
+    a = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0)
+    empty = dict(bag_count=0, bag_shipments=0, semi_count=0, tote_count=0)
     for dh_n in names:
         ld = dh_loads_map.get(dh_n, empty)
-        sec_bags = int(np.ceil(ld["secondary_count"] / SHIPMENTS_PER_BAG)) if ld["secondary_count"] > 0 else 0
-        a["bag_count"]     += ld["bag_count"] + sec_bags
-        a["bag_shipments"] += ld["bag_shipments"] + ld["secondary_count"]
+        a["bag_count"]     += ld["bag_count"]
+        a["bag_shipments"] += ld["bag_shipments"]
         a["semi_count"]       += ld["semi_count"]
         a["tote_count"]       += ld["tote_count"]
-        a["secondary_count"]  += ld["secondary_count"]
     return a
 
 
@@ -1044,7 +1010,7 @@ def _bifurcation_lines_html(agg):
     )
 
 
-def _pendency_kpi_card_html(bag_count, bag_ships, semi_count, tote_count, secondary_count):
+def _pendency_kpi_card_html(bag_count, bag_ships, semi_count, tote_count):
     return (
         f'<div class="predcard" style="display:flex;align-items:center;justify-content:space-around;gap:24px">'
         f'  <div style="text-align:center">'
@@ -1062,22 +1028,17 @@ def _pendency_kpi_card_html(bag_count, bag_ships, semi_count, tote_count, second
         f'    <div style="font-size:30px;font-weight:900;color:#c4b5fd">{tote_count:,}</div>'
         f'    <div style="font-size:12px;opacity:.7">Pending dispatch</div>'
         f'  </div>'
-        f'  <div style="text-align:center;border-left:1px solid rgba(255,255,255,.25);padding-left:24px">'
-        f'    <div style="font-size:11px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.6px">📋 Secondary + Bagging Pending</div>'
-        f'    <div style="font-size:30px;font-weight:900;color:#fca5a5">{secondary_count:,}</div>'
-        f'    <div style="font-size:12px;opacity:.7">Sorted, not bagged</div>'
-        f'  </div>'
         f'</div>'
     )
 
 
-def render_overall_pendency_box(main_box, df_bag, df_semi, df_tote, df_sec):
+def render_overall_pendency_box(main_box, df_bag, df_semi, df_tote):
     """Hub-wide floor pendency when no cutoff is selected."""
     bag_ships = df_bag["ship_count"].sum() if not df_bag.empty else 0
     with main_box.container():
         st.markdown(
             _pendency_kpi_card_html(
-                len(df_bag), int(bag_ships), len(df_semi), len(df_tote), len(df_sec),
+                len(df_bag), int(bag_ships), len(df_semi), len(df_tote),
             ),
             unsafe_allow_html=True,
         )
@@ -1093,7 +1054,6 @@ def render_cutoff_bifurcation_box(main_box, cutoffs, df_dh, all_dh_loads):
                 agg["bag_shipments"],
                 agg["semi_count"],
                 agg["tote_count"],
-                agg["secondary_count"],
             ),
             unsafe_allow_html=True,
         )
@@ -1268,7 +1228,6 @@ def _agg_metrics(agg):
         ("Bag Shipments", agg["bag_shipments"]),
         ("Semi-Large Shipments", agg["semi_count"]),
         ("Totes", agg["tote_count"]),
-        ("Secondary + Bagging Pending", agg["secondary_count"]),
         ("Total Load (CFT)", round(load_to_cft(agg), 1)),
     ]
 
@@ -1322,13 +1281,13 @@ def main():
         try:
             raw  = load_sheets()
             _key = tuple(sorted(raw.keys()))
-            df_bag, df_semi, df_tote, df_sec, vcaps, df_dh, dh_max_vehicle = parse(_key)
+            df_bag, df_semi, df_tote, vcaps, df_dh, dh_max_vehicle = parse(_key)
         except Exception as e:
             st.error(f"❌ Could not load sheet: {e}")
             st.stop()
 
     with st.spinner("Computing DH loads…"):
-        all_dh_loads = compute_all_dh_loads(df_bag, df_semi, df_tote, df_sec, df_dh)
+        all_dh_loads = compute_all_dh_loads(df_bag, df_semi, df_tote, df_dh)
 
     if df_dh.empty:
         st.warning("⚠️ DH Name Cut-Off sheet not found.")
@@ -1508,7 +1467,7 @@ def main():
         elif sel_cutoffs:
             render_cutoff_bifurcation_box(main_box, sel_cutoffs, df_dh, all_dh_loads)
         else:
-            render_overall_pendency_box(main_box, df_bag, df_semi, df_tote, df_sec)
+            render_overall_pendency_box(main_box, df_bag, df_semi, df_tote)
         _sync_sticky_spacer()
 
         if sel_names:
@@ -1521,7 +1480,6 @@ def main():
                 ("Bag Shipments", int(df_bag["ship_count"].sum()) if not df_bag.empty else 0),
                 ("Semi-Large Shipments", len(df_semi)),
                 ("Totes", len(df_tote)),
-                ("Secondary + Bagging Pending", len(df_sec)),
             ]
         if sel_names:
             ex_rows.insert(0, ("Cutoffs", ", ".join(sel_cutoffs)))
