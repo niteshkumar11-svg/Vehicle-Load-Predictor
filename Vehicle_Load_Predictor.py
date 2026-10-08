@@ -970,8 +970,9 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
             "Totes":               ld["tote_count"],
             "Total Shipment":      total_ship_row,
             "Max Vehicle Size":    max_v_str,
+            "Max Utilization %":   round(load_cft / max_v_cap * 100, 1) if max_v_cap else 0.0,
             "Recommended Vehicle": rec_v   if rec_v   else "—",
-            "Utilization %":       round(load_cft / max_v_cap * 100, 1) if max_v_cap else 0.0,
+            "Recommended Utilization %": round(rec_util * 100, 1) if rec_v else 0.0,
         })
 
     dh_summary = pd.DataFrame(dh_rows)
@@ -1415,8 +1416,9 @@ def main():
         "Totes":               st.column_config.NumberColumn(alignment="center", format="%d"),
         "Total Shipment":      st.column_config.NumberColumn(alignment="center", format="%d"),
         "Max Vehicle Size":    st.column_config.TextColumn(alignment="center"),
+        "Max Utilization %":   st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
         "Recommended Vehicle": st.column_config.TextColumn(alignment="center"),
-        "Utilization %":       st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+        "Recommended Utilization %": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
     }
 
     # ── Tab 1: Overview ─────────────────────────────────────────────────────
