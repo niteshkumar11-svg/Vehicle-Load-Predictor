@@ -312,20 +312,25 @@
       const head=(key,label)=>'<th class="sortable" onclick="sortBy(\''+key+'\')">'+label+arrow(key)+'</th>';
       const body=sorted.map(row=>{
         const checked=state.selected.includes(row.name);
-        const width=Math.min(100,Math.max(0,row.utilization));
+        const maxWidth=Math.min(100,Math.max(0,row.maxUtilization));
+        const recommendedWidth=Math.min(100,Math.max(0,row.recommendedUtilization));
         return '<tr class="'+(checked?'selected':'')+'">'+
           '<td><input type="checkbox" '+(checked?'checked':'')+' onchange="toggleRow(\''+escAttr(row.name)+'\')"></td>'+
           '<td>'+esc(row.cutoff)+'</td><td>'+esc(row.code)+'</td><td>'+esc(row.name)+'</td>'+
           '<td>'+row.bagCount.toLocaleString()+'</td><td>'+row.semiCount.toLocaleString()+'</td>'+
           '<td>'+row.toteCount.toLocaleString()+'</td><td>'+row.totalShipments.toLocaleString()+'</td>'+
-          '<td>'+esc(row.maxVehicle)+'</td><td class="vehicle-cell">'+esc(row.recommendedVehicle)+'</td>'+
-          '<td><div class="util"><div class="bar"><i style="width:'+width+'%"></i></div><span>'+Number(row.utilization).toFixed(1)+'%</span></div></td></tr>';
+          '<td>'+esc(row.maxVehicle)+'</td>'+
+          '<td><div class="util"><div class="bar"><i style="width:'+maxWidth+'%"></i></div><span>'+Number(row.maxUtilization).toFixed(1)+'%</span></div></td>'+
+          '<td class="vehicle-cell">'+esc(row.recommendedVehicle)+'</td>'+
+          '<td><div class="util"><div class="bar"><i style="width:'+recommendedWidth+'%"></i></div><span>'+Number(row.recommendedUtilization).toFixed(1)+'%</span></div></td></tr>';
       }).join('');
       return '<div class="table-wrap"><table><thead><tr><th></th>'+
         head('cutoff','Cut Off')+head('code','DH Code')+head('name','DH Name')+
         head('bagCount','Bag')+head('semiCount','Semi Large')+head('toteCount','Totes')+
         head('totalShipments','Total Shipment')+head('maxVehicle','Max Vehicle Size')+
-        head('recommendedVehicle','Recommended Vehicle')+head('utilization','Utilization %')+
+        head('maxUtilization','Max Utilization')+
+        head('recommendedVehicle','Recommended Vehicle')+
+        head('recommendedUtilization','Recommended Utilization')+
         '</tr></thead><tbody>'+body+'</tbody></table></div>';
     }
 
@@ -335,7 +340,7 @@
       render();
     }
     function compareRows(left,right,key){
-      const numeric=['bagCount','semiCount','toteCount','totalShipments','utilization'];
+      const numeric=['bagCount','semiCount','toteCount','totalShipments','maxUtilization','recommendedUtilization'];
       if(numeric.includes(key))return (Number(left[key])||0)-(Number(right[key])||0);
       return String(left[key]??'').localeCompare(String(right[key]??''),undefined,{numeric:true,sensitivity:'base'});
     }
@@ -384,12 +389,15 @@
 
     function exportCurrent(){
       if(!state.data)return;
-      let rows=state.tab==='ready'?state.data.rows.filter(row=>row.utilization>70):
-        state.tab==='overview'?state.data.rows.filter(row=>!state.cutoffs.length||state.cutoffs.includes(row.cutoff)):null;
+      let rows=state.tab==='ready'
+        ? state.data.rows.filter(row=>!state.lane||row.laneType===state.lane)
+        : state.tab==='overview'
+          ? state.data.rows.filter(row=>(!state.lane||row.laneType===state.lane)&&(!state.cutoffs.length||state.cutoffs.includes(row.cutoff)))
+          : null;
       if(state.tab==='capacity'){
         rows=state.data.vehicleCaps.map(row=>({Vehicle:row.vehicle,CFT:row.capacity.toFixed(1)}));
       }else{
-        rows=(rows||[]).map(row=>({'Cut Off':row.cutoff,'DH Code':row.code,'DH Name':row.name,'Bag':row.bagCount,'Semi Large':row.semiCount,'Totes':row.toteCount,'Total Shipment':row.totalShipments,'Max Vehicle Size':row.maxVehicle,'Recommended Vehicle':row.recommendedVehicle,'Utilization %':Number(row.utilization).toFixed(1)}));
+        rows=(rows||[]).map(row=>({'Cut Off':row.cutoff,'DH Code':row.code,'DH Name':row.name,'Lane Type':row.laneType,'Bag':row.bagCount,'Semi Large':row.semiCount,'Totes':row.toteCount,'Total Shipment':row.totalShipments,'Max Vehicle Size':row.maxVehicle,'Max Utilization %':Number(row.maxUtilization).toFixed(1),'Recommended Vehicle':row.recommendedVehicle,'Recommended Utilization %':Number(row.recommendedUtilization).toFixed(1)}));
       }
       const keys=Object.keys(rows[0]||{});
       const csv=[keys].concat(rows.map(row=>keys.map(key=>csvValue(row[key])))).map(row=>row.join(',')).join('\n');
