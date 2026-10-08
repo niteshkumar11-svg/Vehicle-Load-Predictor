@@ -121,6 +121,7 @@ DEFAULT_VEHICLE_CAPS = [
 ]
 
 TARGET_UTIL = 1.00   
+AUTO_REFRESH_SECONDS = 120
 
 st.set_page_config(
     page_title="🚛 Vehicle Load Predictor | Hajipur MH",
@@ -170,9 +171,11 @@ st.markdown("""
    Very faint at normal zoom, reads clearly when zoomed in. */
 .stApp{
     background-color:#f0f2f6;
+    font-family:Calibri,Arial,sans-serif!important;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='200'%3E%3Ctext x='20' y='110' font-family='Arial,sans-serif' font-size='36' font-weight='800' fill='rgba(30,41,59,0.025)' transform='rotate(-30 130 100)'%3EN K%3C/text%3E%3C/svg%3E");
     background-repeat:repeat;
 }
+.stApp *{font-family:Calibri,Arial,sans-serif!important}
 /* Sidebar: narrow, always-expanded nav rail holding just the two tab
    buttons — no collapse arrow, fixed minimum width so it doesn't eat
    dashboard space. */
@@ -350,6 +353,36 @@ def render_header_refresh_button():
         if st.button("🔄 Refresh Data", key="header_refresh"):
             st.cache_data.clear()
             st.rerun()
+
+
+def render_auto_refresh_timer():
+    components.html(
+        f"""
+        <div style="font:600 12px Calibri,Arial,sans-serif;color:#1d4ed8;
+                    background:#eff6ff;border:1px solid #bfdbfe;border-radius:7px;
+                    padding:7px 8px;text-align:center">
+          ⟳ Auto refresh in <span id="countdown">02:00</span>
+        </div>
+        <script>
+          let remaining = {AUTO_REFRESH_SECONDS};
+          const label = document.getElementById("countdown");
+          const tick = () => {{
+            if (remaining <= 0) {{
+              label.textContent = "Updating…";
+              window.parent.location.reload();
+              return;
+            }}
+            const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
+            const seconds = String(remaining % 60).padStart(2, "0");
+            label.textContent = minutes + ":" + seconds;
+            remaining -= 1;
+          }};
+          tick();
+          setInterval(tick, 1000);
+        </script>
+        """,
+        height=36,
+    )
 
 
 def _service_creds():
@@ -924,7 +957,8 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
                          tote_count=ld["tote_count"])
         load_cft = load_to_cft(merged_ld)
 
-        max_v_str = _lookup_dh_max_vehicle(dh_n, dh_max_vehicle)
+        max_v_str = _lookup_dh_max_vehicle(dh_n, dh_max_vehicle) or "24 Ft"
+        max_v_cap = _vehicle_cft(max_v_str)
         rec_v, rec_cap, rec_util, _, _ = recommend_vehicle(
             load_cft, allowed_vcaps_for(max_v_str, vcaps)
         )
@@ -937,9 +971,9 @@ def build_dh_rows(dh_source_df, all_dh_loads, dh_max_vehicle, vcaps):
             "Semi Large":          ld["semi_count"],
             "Totes":               ld["tote_count"],
             "Total Shipment":      total_ship_row,
-            "Max Vehicle Size":    max_v_str if max_v_str else "All vehicles",
+            "Max Vehicle Size":    max_v_str,
             "Recommended Vehicle": rec_v   if rec_v   else "—",
-            "Utilization %":       round(rec_util * 100, 1) if rec_v else 0.0,
+            "Utilization %":       round(load_cft / max_v_cap * 100, 1) if max_v_cap else 0.0,
         })
 
     dh_summary = pd.DataFrame(dh_rows)
@@ -1326,6 +1360,7 @@ def main():
         if st.button("❮", key="sb_hide", help="Hide sidebar"):
             st.session_state.sb_open = False
             st.rerun()
+        render_auto_refresh_timer()
         st.markdown(
             f'<div class="sidebar-data-refresh" role="status">'
             f'{_data_refreshed_label(last_updated)}'
@@ -1334,7 +1369,7 @@ def main():
         )
         if st.button("📊 Overview", key="nav_overview", use_container_width=True):
             st.session_state.active_tab = "overview"
-        if st.button("🚀 Ready to Dispatch", key="nav_ready", use_container_width=True):
+        if st.button("📝 Adhoc Requirement", key="nav_ready", use_container_width=True):
             st.session_state.active_tab = "ready"
         if st.button("🚛 Vehicle Max Capacity", key="nav_capacity", use_container_width=True):
             st.session_state.active_tab = "capacity"
@@ -1471,12 +1506,11 @@ def main():
             key="export_overview",
         )
 
-    # ── Tab 2: Ready to Dispatch DHs (Utilization % > 70, across all cutoffs) ──
+    # ── Tab 2: Adhoc Requirement (all DHs with pending load) ───────────────
     elif st.session_state.active_tab == "ready":
         ready_summary_all, ready_loads_map = build_dh_rows(df_dh, all_dh_loads, dh_max_vehicle, vcaps)
         ready_summary = (
-            ready_summary_all[ready_summary_all["Utilization %"] > 70]
-            .sort_values("Utilization %", ascending=False)
+            ready_summary_all.sort_values("Total Shipment", ascending=False)
             .reset_index(drop=True)
             if not ready_summary_all.empty else ready_summary_all
         )
@@ -1490,7 +1524,7 @@ def main():
             n_ready = len(ready_summary)
             st.markdown(
                 f'<div style="font-size:20px;font-weight:700;text-align:center;padding:4px 0">'
-                f'🚀 Ready to Dispatch DHs — {n_ready} DH(s) over 70% utilization</div>',
+                f'📝 Adhoc Requirement — {n_ready} DH(s)</div>',
                 unsafe_allow_html=True,
             )
 
@@ -1498,7 +1532,7 @@ def main():
 
         ready_sel_names = []
         if ready_summary.empty:
-            st.info("No DHs currently have a recommended-vehicle utilization above 70%.")
+            st.info("No DHs with pending load were found.")
         else:
             ready_styled = ready_summary.style.map(_vehicle_badge_style, subset=["Recommended Vehicle"])
             ready_evt = st.dataframe(
@@ -1522,9 +1556,9 @@ def main():
         export_slot.download_button(
             "⬇️ Export to Excel",
             data=_build_export_xlsx(
-                "Ready to Dispatch",
+                "Adhoc Requirement",
                 _prediction_metrics(ready_sel_names, ready_loads_map, vcaps, dh_max_vehicle)
-                if ready_sel_names else [("DHs over 70% utilization", len(ready_summary))],
+                if ready_sel_names else [("DHs with pending load", len(ready_summary))],
                 ready_summary, ready_sel_names, _data_refreshed_label(last_updated),
             ),
             file_name=f"vehicle_load_ready_{datetime.now(ZoneInfo('Asia/Kolkata')):%Y%m%d_%H%M}.xlsx",
