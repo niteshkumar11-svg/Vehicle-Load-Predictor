@@ -661,9 +661,7 @@ def _club_constraint_for(names, dh_max_vehicle):
     """Most restrictive max-vehicle cap among selected DHs, or (None, 0)."""
     hit = None
     for nm in names:
-        mx = _lookup_dh_max_vehicle(nm, dh_max_vehicle or {})
-        if not mx:
-            continue
+        mx = _lookup_dh_max_vehicle(nm, dh_max_vehicle or {}) or "24 Ft"
         num = _vehicle_size_num(mx)
         if num is None:
             continue
