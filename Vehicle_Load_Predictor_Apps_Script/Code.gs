@@ -25,9 +25,12 @@ function doGet() {
 
 function getDashboardData() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const bag = parseBag_(findSheet_(ss, ['bag']));
-  const semi = parseRows_(findSheet_(ss, ['semi']), 'semi');
-  const tote = parseRows_(findSheet_(ss, ['tote']), 'tote');
+  const bagSheet = findSheet_(ss, ['bag']);
+  const semiSheet = findSheet_(ss, ['semi']);
+  const toteSheet = findSheet_(ss, ['tote']);
+  const bag = parseBag_(bagSheet);
+  const semi = parseRows_(semiSheet, 'semi');
+  const tote = parseRows_(toteSheet, 'tote');
   const dhSheet = findSheet_(ss, ['dh name', 'cut-off', 'cutoff', 'dh']);
   const masterDhRows = parseDh_(dhSheet);
   const dhRows = mapRawDestinationsToDh_(masterDhRows, bag, semi, tote);
@@ -35,10 +38,10 @@ function getDashboardData() {
   const maxVehicles = parseMaxVehicles_(findSheet_(ss, ['vehicle capacity']));
   const loads = computeLoads_(dhRows, bag, semi, tote);
   const rows = buildDhRows_(dhRows, loads, maxVehicles, vehicleCaps);
-  const fileUpdated = DriveApp.getFileById(SPREADSHEET_ID).getLastUpdated();
+  const dataUpdated = latestSheetUpdated_([bagSheet, semiSheet, toteSheet]) || new Date();
 
   return {
-    updatedAt: fileUpdated.toISOString(),
+    updatedAt: dataUpdated.toISOString(),
     overall: {
       bagCount: bag.length,
       bagShipments: sum_(bag, 'shipments'),
@@ -57,6 +60,38 @@ function getDashboardData() {
     vehicleCaps: vehicleCaps.map(item => ({vehicle: item.vehicle, capacity: item.capacity})),
     maxVehicles: maxVehicles,
   };
+}
+
+function latestSheetUpdated_(sheets) {
+  let latest = null;
+  sheets.forEach(sheet => {
+    if (!sheet) return;
+    const table = table_(sheet);
+    const updatedHeader = column_(table.headers, header =>
+      header.includes('last updated') || header.includes('updated at')
+    );
+    if (!updatedHeader) return;
+    table.rows.forEach(row => {
+      const parsed = parseSheetDate_(row[updatedHeader]);
+      if (parsed && (!latest || parsed.getTime() > latest.getTime())) latest = parsed;
+    });
+  });
+  return latest;
+}
+
+function parseSheetDate_(value) {
+  const text = clean_(value);
+  if (!text) return null;
+  for (const format of ['dd MMM yyyy, hh:mm a', 'd MMM yyyy, hh:mm a']) {
+    try {
+      const parsed = Utilities.parseDate(text, Session.getScriptTimeZone(), format);
+      if (parsed && !isNaN(parsed.getTime())) return parsed;
+    } catch (error) {
+      // Try the next supported display format.
+    }
+  }
+  const fallback = new Date(text);
+  return isNaN(fallback.getTime()) ? null : fallback;
 }
 
 function findSheet_(ss, hints) {
