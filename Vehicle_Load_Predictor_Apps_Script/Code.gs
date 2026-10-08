@@ -288,8 +288,9 @@ function buildDhRows_(dhRows, loads, maxVehicles, vehicleCaps) {
       toteCount: load.toteCount,
       totalShipments: totalShipments,
       maxVehicle: maxVehicle,
+      maxUtilization: maxCapacity ? (loadCft / maxCapacity) * 100 : 0,
       recommendedVehicle: plan.vehicle || '—',
-      utilization: maxCapacity ? (loadCft / maxCapacity) * 100 : 0,
+      recommendedUtilization: plan.utilization * 100,
       loadCft: loadCft,
       breakdown: plan.breakdown,
     };
