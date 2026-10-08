@@ -26,6 +26,8 @@
     .nav{width:100%;padding:9px 8px;margin:0 0 8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;text-align:left}
     .nav.active{background:#ff4b4b;color:#fff;border-color:#ff4b4b}
     .section{margin:16px 0 6px 2px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px}
+    .lane-select{width:100%;padding:8px 9px;margin-bottom:4px;border:1px solid #cbd5e1;
+      border-radius:7px;background:#fff;color:#334155;font:13px Calibri,Arial,sans-serif}
     .cutoff{display:block;margin:8px 0;color:#334155}
     .cutoff input{margin-right:7px}
     .chip{padding:5px 7px;margin:4px 0;border-radius:6px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:600;word-break:break-word}
@@ -90,13 +92,14 @@
   <script>
     const AUTO_REFRESH_SECONDS=120;
     let nextAutoRefreshAt=0;
-    const state = {data:null, tab:'overview', cutoffs:[], selected:[], loading:false, sortKey:null, sortDir:1};
+    const state = {data:null, tab:'overview', lane:'', cutoffs:[], selected:[], loading:false, sortKey:null, sortDir:1};
 
     function boot(){
       google.script.run.withSuccessHandler(setData).withFailureHandler(showError).getDashboardData();
     }
     function setData(data){
       state.data=data; state.loading=false;
+      if(state.lane && !data.lanes.includes(state.lane))state.lane='';
       state.cutoffs=state.cutoffs.filter(c => data.cutoffs.includes(c));
       state.selected=state.selected.filter(name => data.rows.some(row => row.name===name));
       nextAutoRefreshAt=Date.now()+AUTO_REFRESH_SECONDS*1000;
@@ -164,14 +167,20 @@
       if(!state.data){return}
       const data=state.data;
       const selected=state.selected;
-      const cutoffs=data.cutoffs.map(c=>{
+      const laneRows=state.lane
+        ? data.rows.filter(row=>row.laneType===state.lane)
+        : [];
+      const cutoffValues=Array.from(new Set(laneRows.map(row=>row.cutoff))).sort();
+      const cutoffs=cutoffValues.map(c=>{
         return '<label class="cutoff"><input type="checkbox" '+(state.cutoffs.includes(c)?'checked':'')+
           ' onchange="toggleCutoff(\''+escAttr(c)+'\')">'+esc(c)+'</label>';
       }).join('');
-      const cutoffMessage=data.cutoffs.length
-        ? cutoffs
-        : '<div class="muted">No cutoff rows detected.<br>DH sheet rows: '+data.diagnostics.cutoffSheetRows+
-          '<br>Raw destinations: '+data.diagnostics.rawDestinationCount+'</div>';
+      const cutoffMessage=!state.lane
+        ? '<div class="muted">Select a lane first.</div>'
+        : cutoffs || '<div class="muted">No DH load rows found for this lane.</div>';
+      const laneOptions=['<option value="">Select lane</option>']
+        .concat(data.lanes.map(lane=>'<option value="'+escAttr(lane)+'" '+(lane===state.lane?'selected':'')+'>'+esc(lane)+'</option>'))
+        .join('');
       const chips=selected.map(name=>'<div class="chip">'+esc(name)+'</div>').join('');
       document.getElementById('sidebar').innerHTML=
         '<div class="auto-refresh-status" id="auto-refresh-status">Auto refresh in 02:00</div>'+
@@ -181,6 +190,8 @@
         navButton('capacity','🚛 Vehicle Max Capacity')+
         '<button class="export" onclick="exportCurrent()">⬇️ Export to CSV</button>'+
         (selected.length?'<div class="section">✅ Selected DHs</div>'+chips:'')+
+        '<div class="section">🚚 Select Lane</div>'+
+        '<select class="lane-select" onchange="changeLane(this.value)">'+laneOptions+'</select>'+
         (state.tab==='overview'?'<div class="section">🕐 Select Cutoff</div>'+cutoffMessage:'');
       updateAutoRefreshStatus();
     }
@@ -211,6 +222,12 @@
       state.selected=[];
       render();
     }
+    function changeLane(lane){
+      state.lane=lane;
+      state.cutoffs=[];
+      state.selected=[];
+      render();
+    }
     function toggleRow(name){
       state.selected=state.selected.includes(name)
         ? state.selected.filter(item=>item!==name)
@@ -219,7 +236,10 @@
     }
 
     function renderOverview(main){
-      const rows=state.data.rows.filter(row=>!state.cutoffs.length || state.cutoffs.includes(row.cutoff));
+      const rows=state.data.rows.filter(row=>
+        (!state.lane || row.laneType===state.lane) &&
+        (!state.cutoffs.length || state.cutoffs.includes(row.cutoff))
+      );
       const selectedRows=rows.filter(row=>state.selected.includes(row.name));
       const title=state.cutoffs.length
         ? '🏭 DH Load Breakdown — '+rows.length+' DH(s) with pending load'
@@ -232,7 +252,7 @@
       main.innerHTML='<section class="sticky">'+top+'</section><div class="heading">'+title+'</div>'+content;
     }
     function renderReady(main){
-      const rows=state.data.rows.slice();
+      const rows=state.data.rows.filter(row=>!state.lane || row.laneType===state.lane);
       const selectedRows=rows.filter(row=>state.selected.includes(row.name));
       const top=selectedRows.length
         ? '<section class="sticky">'+predictionCard(selectedRows)+'</section>'
