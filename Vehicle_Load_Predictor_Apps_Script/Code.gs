@@ -46,6 +46,7 @@ function getDashboardData() {
       toteCount: tote.length,
     },
     rows: rows,
+    lanes: unique_(masterDhRows.map(row => row.laneType).filter(Boolean)).sort(),
     cutoffs: unique_(masterDhRows.map(row => row.cutoff)).sort(),
     diagnostics: {
       cutoffSheetRows: masterDhRows.length,
@@ -138,6 +139,9 @@ function parseDh_(sheet) {
   const codeHeader = column_(headers, header =>
     header.includes('dh code') || header === 'code' || header === 'coc'
   );
+  const laneHeader = column_(headers, header =>
+    header === 'lane type' || header.includes('lane type')
+  );
   if (!nameHeader) return [];
   const rows = values.slice(headerRow + 1).map(valuesRow => {
     const row = {};
@@ -149,6 +153,7 @@ function parseDh_(sheet) {
       code: clean_(codeHeader ? row[codeHeader] : ''),
       name: clean_(row[nameHeader]),
       cutoff: clean_(row[cutoffHeader]).slice(0, 5),
+      laneType: clean_(laneHeader ? row[laneHeader] : ''),
     }))
     .filter(row => row.name && /^\d{1,2}:\d{2}/.test(row.cutoff));
 }
@@ -241,6 +246,7 @@ function buildDhRows_(dhRows, loads, maxVehicles, vehicleCaps) {
       cutoff: row.cutoff,
       code: row.code,
       name: row.name,
+      laneType: row.laneType || '',
       bagCount: load.bagCount,
       bagShipments: load.bagShipments,
       semiCount: load.semiCount,
