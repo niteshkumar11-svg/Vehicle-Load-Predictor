@@ -167,7 +167,7 @@
       document.getElementById('sidebar').innerHTML=
         '<div class="timestamp">Data Refreshed at '+formatDate(data.updatedAt)+'</div>'+
         navButton('overview','📊 Overview')+
-        navButton('ready','🚀 Ready to Dispatch')+
+        navButton('ready','📝 Adhoc Requirement')+
         navButton('capacity','🚛 Vehicle Max Capacity')+
         '<button class="export" onclick="exportCurrent()">⬇️ Export to CSV</button>'+
         (selected.length?'<div class="section">✅ Selected DHs</div>'+chips:'')+
@@ -209,14 +209,14 @@
       main.innerHTML='<section class="sticky">'+top+'</section><div class="heading">'+title+'</div>'+content;
     }
     function renderReady(main){
-      const rows=state.data.rows.filter(row=>row.utilization>70);
+      const rows=state.data.rows.slice();
       const selectedRows=rows.filter(row=>state.selected.includes(row.name));
       const top=selectedRows.length
         ? '<section class="sticky">'+predictionCard(selectedRows)+'</section>'
         : '<div class="hint">Select one or more DHs below to see the combined prediction.</div>';
       main.innerHTML=top+
-        '<div class="heading">🚀 Ready to Dispatch DHs — '+rows.length+' DH(s) over 70% utilization</div>'+
-        (rows.length?tableHtml(rows,'totalShipments',-1):'<div class="hint">No DHs currently have a recommended-vehicle utilization above 70%.</div>');
+        '<div class="heading">📝 Adhoc Requirement — '+rows.length+' DH(s)</div>'+
+        (rows.length?tableHtml(rows,'totalShipments',-1):'<div class="hint">No DHs with pending load were found.</div>');
     }
     function renderCapacity(main){
       const rows=state.data.vehicleCaps;
@@ -362,7 +362,7 @@
     const SHIPMENTS_PER_BAG=30;
     const CFT_PER_BAG=2304/(17000/SHIPMENTS_PER_BAG), CFT_PER_SEMI=2304/1800, CFT_PER_TOTE=2304/650;
     window.addEventListener('resize',syncFrozenHeaders);
-    window.setInterval(()=>{if(!state.loading)refreshData(true)},60000);
+    window.setInterval(()=>{if(!state.loading)refreshData(true)},120000);
     boot();
   </script>
 </body>
