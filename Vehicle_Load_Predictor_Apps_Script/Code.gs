@@ -234,7 +234,8 @@ function buildDhRows_(dhRows, loads, maxVehicles, vehicleCaps) {
     const load = loads[row.name] || {bagCount: 0, bagShipments: 0, semiCount: 0, toteCount: 0};
     const totalShipments = load.bagShipments + load.semiCount + load.toteCount;
     const loadCft = loadToCft_(load);
-    const maxVehicle = maxVehicles[normalize_(row.name)] || '';
+    const maxVehicle = maxVehicles[normalize_(row.name)] || '24 Ft';
+    const maxCapacity = capacityForVehicle_(maxVehicle);
     const plan = recommendConstrained_(loadCft, vehicleCaps, maxVehicle);
     return {
       cutoff: row.cutoff,
@@ -245,9 +246,9 @@ function buildDhRows_(dhRows, loads, maxVehicles, vehicleCaps) {
       semiCount: load.semiCount,
       toteCount: load.toteCount,
       totalShipments: totalShipments,
-      maxVehicle: maxVehicle || 'All vehicles',
+      maxVehicle: maxVehicle,
       recommendedVehicle: plan.vehicle || '—',
-      utilization: plan.utilization * 100,
+      utilization: maxCapacity ? (loadCft / maxCapacity) * 100 : 0,
       loadCft: loadCft,
       breakdown: plan.breakdown,
     };
@@ -317,6 +318,13 @@ function loadToCft_(load) {
 
 function vehicleLabel_(size) {
   return Object.keys(VEHICLE_CFT).find(vehicle => vehicleNumber_(vehicle) === size) || size + ' Ft';
+}
+
+function capacityForVehicle_(value) {
+  const size = vehicleNumber_(value);
+  if (size === null) return 0;
+  const label = vehicleLabel_(size);
+  return VEHICLE_CFT[label] || size * 8 * 9;
 }
 
 function vehicleNumber_(value) {
