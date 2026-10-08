@@ -125,8 +125,12 @@
       renderSidebar();
       if(!state.data) return;
       const main=document.getElementById('main');
-      if(state.tab==='capacity'){renderCapacity(main);return}
-      if(state.tab==='ready'){renderReady(main);return}
+      if(state.tab==='capacity'){renderCapacity(main);syncFrozenHeaders();return}
+      if(state.tab==='ready'){
+        renderReady(main);
+        requestAnimationFrame(syncFrozenHeaders);
+        return;
+      }
       renderOverview(main);
       requestAnimationFrame(syncFrozenHeaders);
     }
@@ -135,6 +139,8 @@
       const heading=document.querySelector('.heading');
       if(!prediction||!heading){
         document.documentElement.classList.remove('has-frozen-table');
+        document.documentElement.style.setProperty('--freeze-heading-top','68px');
+        document.documentElement.style.setProperty('--freeze-table-top','110px');
         return;
       }
       document.documentElement.classList.add('has-frozen-table');
@@ -202,8 +208,10 @@
     function renderReady(main){
       const rows=state.data.rows.filter(row=>row.utilization>70);
       const selectedRows=rows.filter(row=>state.selected.includes(row.name));
-      const top=selectedRows.length?predictionCard(selectedRows):'<div class="hint">Select one or more DHs below to see the combined prediction.</div>';
-      main.innerHTML='<section class="sticky">'+top+'</section>'+
+      const top=selectedRows.length
+        ? '<section class="sticky">'+predictionCard(selectedRows)+'</section>'
+        : '<div class="hint">Select one or more DHs below to see the combined prediction.</div>';
+      main.innerHTML=top+
         '<div class="heading">🚀 Ready to Dispatch DHs — '+rows.length+' DH(s) over 70% utilization</div>'+
         (rows.length?tableHtml(rows):'<div class="hint">No DHs currently have a recommended-vehicle utilization above 70%.</div>');
     }
