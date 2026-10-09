@@ -14,7 +14,14 @@
     #title div{font-size:9px;letter-spacing:1px;color:#64748b;margin-top:2px}
     #active-users{position:absolute;right:92px;top:13px;max-width:230px;padding:6px 9px;
       border:1px solid #bfdbfe;border-radius:7px;background:#eff6ff;color:#1d4ed8;
-      font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+    #active-users-popover{display:none;position:fixed;z-index:30;right:92px;top:49px;width:285px;
+      max-height:260px;overflow:auto;padding:10px;background:#fff;border:1px solid #cbd5e1;
+      border-radius:8px;box-shadow:0 8px 24px #0f172a26;color:#334155;font-size:12px}
+    .active-user-row{padding:7px 4px;border-bottom:1px solid #e2e8f0}
+    .active-user-row:last-child{border-bottom:0}
+    .active-user-name{font-weight:700;color:#1d4ed8}
+    .active-user-seen{display:block;color:#64748b;font-size:10px;margin-top:2px}
     #logo{position:absolute;right:14px;top:16px;background:#ffe500;color:#0878ce;border-radius:3px;padding:3px 7px;font-weight:900;font-style:italic}
     #refresh{position:absolute;left:8px;top:11px;padding:7px 12px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;color:#334155}
     #refresh:disabled{opacity:.6;cursor:wait}
@@ -86,9 +93,10 @@
   <header id="header">
     <button id="refresh" onclick="refreshData()">🔄 Refresh Data</button>
     <div id="title"><h1>Vehicle Load Predictor</h1><div>FLIPKART · VEHICLE LOAD PREDICTION</div></div>
-    <div id="active-users" title="Active dashboard users">👥 Active users: —</div>
+    <button id="active-users" title="Click to view active dashboard users" onclick="toggleActiveUsers()">👥 Active users: —</button>
     <div id="logo">Flipkart ⚡</div>
   </header>
+  <div id="active-users-popover"></div>
   <div id="freeze-shield" aria-hidden="true"></div>
   <aside id="sidebar"></aside>
   <main id="main"><div class="loading">Loading dashboard…</div></main>
@@ -96,6 +104,7 @@
   <script>
     const AUTO_REFRESH_SECONDS=120;
     let nextAutoRefreshAt=0;
+    let activeUsers=[];
     const state = {data:null, tab:'overview', lane:'', cutoffs:[], selected:[], loading:false, sortKey:null, sortDir:1};
 
     function boot(){
@@ -106,11 +115,35 @@
       google.script.run.withSuccessHandler(renderActiveUsers).withFailureHandler(()=>{}).registerActiveUser();
     }
     function renderActiveUsers(users){
+      activeUsers=users||[];
       const element=document.getElementById('active-users');
       if(!element)return;
-      const names=users.map(user=>user.email);
-      element.textContent='👥 Active users: '+users.length+(names.length?' · '+names.join(', '):'');
+      const names=activeUsers.map(user=>user.name||user.email);
+      element.textContent='👥 Active users: '+activeUsers.length;
       element.title=names.length?names.join('\n'):'No active users';
+      if(document.getElementById('active-users-popover').style.display==='block')renderActiveUserPopover();
+    }
+    function toggleActiveUsers(){
+      const popover=document.getElementById('active-users-popover');
+      const isOpen=popover.style.display==='block';
+      if(isOpen){popover.style.display='none';return}
+      popover.style.display='block';
+      popover.innerHTML='<div class="muted">Loading active users…</div>';
+      google.script.run.withSuccessHandler(renderActiveUsers).withFailureHandler(error=>{
+        popover.innerHTML='<div class="muted">Unable to load active users.</div>';
+      }).getActiveUsers();
+    }
+    function renderActiveUserPopover(){
+      const popover=document.getElementById('active-users-popover');
+      if(!activeUsers.length){
+        popover.innerHTML='<div class="muted">No active users detected.</div>';
+        return;
+      }
+      popover.innerHTML='<div style="font-weight:700;margin-bottom:5px">Active dashboard users</div>'+
+        activeUsers.map(user=>'<div class="active-user-row">'+
+          '<span class="active-user-name">● '+esc(user.name||user.email)+'</span>'+
+          '<span class="active-user-seen">Last seen: '+formatDate(user.lastSeen)+'</span>'+
+        '</div>').join('');
     }
     function setData(data){
       state.data=data; state.loading=false;
