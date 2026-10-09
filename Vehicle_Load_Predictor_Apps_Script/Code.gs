@@ -48,9 +48,18 @@ function registerActiveUser() {
   }
 }
 
+function getActiveUsers() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(PRESENCE_SHEET_NAME);
+  return sheet ? activeUsersFromSheet_(sheet, new Date()) : [];
+}
+
 function activeUserEmail_() {
   try {
-    return Session.getActiveUser().getEmail() || 'Guest';
+    const email = Session.getActiveUser().getEmail();
+    if (email) return email;
+    const temporaryKey = Session.getTemporaryActiveUserKey();
+    return temporaryKey ? 'Guest-' + temporaryKey.slice(-8) : 'Guest';
   } catch (error) {
     return 'Guest';
   }
