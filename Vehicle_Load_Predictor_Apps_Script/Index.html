@@ -12,6 +12,9 @@
     #title{position:absolute;left:50%;top:8px;transform:translateX(-50%);text-align:center}
     #title h1{font-size:20px;margin:0;font-weight:800}
     #title div{font-size:9px;letter-spacing:1px;color:#64748b;margin-top:2px}
+    #active-users{position:absolute;right:92px;top:13px;max-width:230px;padding:6px 9px;
+      border:1px solid #bfdbfe;border-radius:7px;background:#eff6ff;color:#1d4ed8;
+      font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #logo{position:absolute;right:14px;top:16px;background:#ffe500;color:#0878ce;border-radius:3px;padding:3px 7px;font-weight:900;font-style:italic}
     #refresh{position:absolute;left:8px;top:11px;padding:7px 12px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;color:#334155}
     #refresh:disabled{opacity:.6;cursor:wait}
@@ -83,6 +86,7 @@
   <header id="header">
     <button id="refresh" onclick="refreshData()">🔄 Refresh Data</button>
     <div id="title"><h1>Vehicle Load Predictor</h1><div>FLIPKART · VEHICLE LOAD PREDICTION</div></div>
+    <div id="active-users" title="Active dashboard users">👥 Active users: —</div>
     <div id="logo">Flipkart ⚡</div>
   </header>
   <div id="freeze-shield" aria-hidden="true"></div>
@@ -96,6 +100,17 @@
 
     function boot(){
       google.script.run.withSuccessHandler(setData).withFailureHandler(showError).getDashboardData();
+      heartbeatPresence();
+    }
+    function heartbeatPresence(){
+      google.script.run.withSuccessHandler(renderActiveUsers).withFailureHandler(()=>{}).registerActiveUser();
+    }
+    function renderActiveUsers(users){
+      const element=document.getElementById('active-users');
+      if(!element)return;
+      const names=users.map(user=>user.email);
+      element.textContent='👥 Active users: '+users.length+(names.length?' · '+names.join(', '):'');
+      element.title=names.length?names.join('\n'):'No active users';
     }
     function setData(data){
       state.data=data; state.loading=false;
@@ -417,6 +432,7 @@
       if(!state.loading && Date.now()>=nextAutoRefreshAt)refreshData(true);
       else updateAutoRefreshStatus();
     },1000);
+    window.setInterval(heartbeatPresence,60000);
     boot();
   </script>
 </body>
