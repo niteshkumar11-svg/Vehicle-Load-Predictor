@@ -56,7 +56,8 @@ function getActiveUsers() {
 
 function activeUserEmail_() {
   try {
-    const email = Session.getActiveUser().getEmail();
+    const email = Session.getActiveUser().getEmail()
+      || Session.getEffectiveUser().getEmail();
     if (email) return email;
     const temporaryKey = Session.getTemporaryActiveUserKey();
     return temporaryKey ? 'Guest-' + temporaryKey.slice(-8) : 'Guest';
