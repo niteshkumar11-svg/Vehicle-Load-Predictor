@@ -1,5 +1,7 @@
 const SPREADSHEET_ID = '1SbLc5pt0YPDBEQVOaOfyd-AJfvhTthQ5zUAcGgFU7Tc';
 const SHIPMENTS_PER_BAG = 30;
+const PRESENCE_SHEET_NAME = 'Dashboard Active Users';
+const PRESENCE_TTL_MS = 5 * 60 * 1000;
 
 const VEHICLE_CFT = {
   '6.5 Ft': 6.5 * 4.65 * 4.75,
@@ -21,6 +23,52 @@ function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('Vehicle Load Predictor | Hajipur MH')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function registerActiveUser() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(PRESENCE_SHEET_NAME) || ss.insertSheet(PRESENCE_SHEET_NAME);
+  const email = activeUserEmail_();
+  const now = new Date();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    if (sheet.getLastRow() === 0) sheet.appendRow(['User', 'Last Seen']);
+    const lastRow = sheet.getLastRow();
+    const values = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 2).getValues() : [];
+    const existingIndex = values.findIndex(row => String(row[0] || '').toLowerCase() === email.toLowerCase());
+    if (existingIndex >= 0) {
+      sheet.getRange(existingIndex + 2, 2).setValue(now);
+    } else {
+      sheet.appendRow([email, now]);
+    }
+    return activeUsersFromSheet_(sheet, now);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function activeUserEmail_() {
+  try {
+    return Session.getActiveUser().getEmail() || 'Guest';
+  } catch (error) {
+    return 'Guest';
+  }
+}
+
+function activeUsersFromSheet_(sheet, now) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+  const cutoff = now.getTime() - PRESENCE_TTL_MS;
+  return sheet.getRange(2, 1, lastRow - 1, 2).getValues()
+    .map(row => ({email: String(row[0] || 'Guest'), lastSeen: row[1]}))
+    .filter(user => user.lastSeen instanceof Date && user.lastSeen.getTime() >= cutoff)
+    .sort((left, right) => right.lastSeen.getTime() - left.lastSeen.getTime())
+    .map(user => ({
+      email: user.email,
+      name: user.email === 'Guest' ? 'Guest' : user.email.split('@')[0],
+      lastSeen: user.lastSeen.toISOString(),
+    }));
 }
 
 function getDashboardData() {
