@@ -48,8 +48,10 @@
     .export{width:100%;padding:9px 8px;margin:12px 0;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155}
     .loading,.error{padding:18px;text-align:center;border-radius:10px;background:#fff}
     .error{color:#b91c1c;border:1px solid #fecaca}
-    .sticky{position:sticky;top:68px;z-index:7;padding:0;background:var(--bg);overflow:visible}
-    .kpi,.prediction{position:relative;z-index:8;border-radius:12px;color:#fff;background:linear-gradient(110deg,#17396f,#2563eb);box-shadow:0 7px 18px #1e3a8a2b}
+    .sticky{position:sticky;top:68px;z-index:7;display:block!important;visibility:visible!important;
+      padding:0;background:var(--bg);overflow:visible}
+    .kpi,.prediction{position:relative;z-index:8;display:flex!important;visibility:visible!important;opacity:1!important;
+      border-radius:12px;color:#fff;background:linear-gradient(110deg,#17396f,#2563eb);box-shadow:0 7px 18px #1e3a8a2b}
     .kpi{display:flex;justify-content:space-around;gap:12px;padding:16px 12px}
     .kpi-item{flex:1;text-align:center;border-left:1px solid #ffffff40}
     .kpi-item:first-child{border-left:0}
