@@ -105,7 +105,7 @@
     const AUTO_REFRESH_SECONDS=120;
     let nextAutoRefreshAt=0;
     let activeUsers=[];
-    const state = {data:null, tab:'overview', lane:'', cutoffs:[], selected:[], loading:false, sortKey:null, sortDir:1};
+    const state = {data:null, tab:'overview', lane:'MH-DH', cutoffs:[], selected:[], loading:false, sortKey:null, sortDir:1};
 
     function boot(){
       google.script.run.withSuccessHandler(setData).withFailureHandler(showError).getDashboardData();
