@@ -75,6 +75,7 @@
       background:var(--bg);border-bottom:1px solid #dbe3ef}
     .hint{padding:16px;text-align:center;background:#fff;border-radius:9px;color:#475569}
     .table-wrap{overflow:visible;background:#fff;border-radius:8px}
+    .adhoc-table-wrap{overflow-x:auto;overflow-y:visible;padding-bottom:5px}
     table{width:100%;border-collapse:collapse;min-width:930px}
     th{position:sticky;top:var(--freeze-table-top,110px);z-index:5;
       background:#c7d2fe;color:#475569;font-size:10px;font-weight:700;white-space:nowrap}
@@ -397,7 +398,7 @@
             : '')+
           '</tr>';
       }).join('');
-      return '<div class="table-wrap"><table><thead><tr><th></th>'+
+      return '<div class="table-wrap '+(editable?'adhoc-table-wrap':'')+'"><table><thead><tr><th></th>'+
         head('cutoff','Cut Off')+head('code','DH Code')+head('name','DH Name')+
         head('bagCount','Bag')+head('semiCount','Semi Large')+head('toteCount','Totes')+
         head('totalShipments','Total Shipment')+head('maxVehicle','Max Vehicle Size')+
