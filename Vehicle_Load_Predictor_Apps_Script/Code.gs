@@ -3,7 +3,7 @@ const SHIPMENTS_PER_BAG = 30;
 const PRESENCE_SHEET_NAME = 'Dashboard Active Users';
 const PRESENCE_TTL_MS = 5 * 60 * 1000;
 const ADHOC_NOTES_SHEET_NAME = 'Adhoc Requirement Notes';
-const ADHOC_RESET_HOUR = 6;
+const ADHOC_RESET_HOUR = 4;
 
 const VEHICLE_CFT = {
   '6.5 Ft': 6.5 * 4.65 * 4.75,
@@ -158,9 +158,10 @@ function adhocNotesSheet_(ss) {
   const sheet = ss.getSheetByName(ADHOC_NOTES_SHEET_NAME)
     || ss.insertSheet(ADHOC_NOTES_SHEET_NAME);
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['DH Name', 'Adhoc Field 1', 'Adhoc Field 2']);
-    sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+    sheet.appendRow(['DH Name', 'Remarks by LH', 'Edited By']);
   }
+  sheet.getRange(1, 1, 1, 3).setValues([['DH Name', 'Remarks by LH', 'Edited By']]);
+  sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
   return sheet;
 }
 
