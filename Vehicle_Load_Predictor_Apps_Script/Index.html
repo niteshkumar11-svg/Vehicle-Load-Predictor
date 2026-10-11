@@ -75,7 +75,23 @@
       background:var(--bg);border-bottom:1px solid #dbe3ef}
     .hint{padding:16px;text-align:center;background:#fff;border-radius:9px;color:#475569}
     .table-wrap{overflow:visible;background:#fff;border-radius:8px}
-    .adhoc-table-wrap{overflow-x:auto;overflow-y:visible;padding-bottom:5px}
+    .adhoc-table-wrap{overflow:visible;padding-bottom:5px}
+    .adhoc-table-wrap table{width:100%;min-width:0;table-layout:fixed}
+    .adhoc-table-wrap th,.adhoc-table-wrap td{padding:4px 2px;font-size:9px;white-space:normal;word-break:break-word}
+    .adhoc-table-wrap th:nth-child(1){width:2%}
+    .adhoc-table-wrap th:nth-child(2){width:5%}
+    .adhoc-table-wrap th:nth-child(3){width:7%}
+    .adhoc-table-wrap th:nth-child(4){width:13%}
+    .adhoc-table-wrap th:nth-child(5){width:4%}
+    .adhoc-table-wrap th:nth-child(6){width:5%}
+    .adhoc-table-wrap th:nth-child(7){width:4%}
+    .adhoc-table-wrap th:nth-child(8){width:6%}
+    .adhoc-table-wrap th:nth-child(9){width:7%}
+    .adhoc-table-wrap th:nth-child(10){width:9%}
+    .adhoc-table-wrap th:nth-child(11){width:9%}
+    .adhoc-table-wrap th:nth-child(12){width:9%}
+    .adhoc-table-wrap th:nth-child(13){width:10%}
+    .adhoc-table-wrap th:nth-child(14){width:10%}
     table{width:100%;border-collapse:collapse;min-width:930px}
     th{position:sticky;top:var(--freeze-table-top,110px);z-index:5;
       background:#c7d2fe;color:#475569;font-size:10px;font-weight:700;white-space:nowrap}
@@ -88,8 +104,8 @@
     .util{display:flex;align-items:center;gap:6px}
     .util .bar{flex:1;margin:0;height:6px}
     .util span{width:42px;text-align:right;font-size:10px;color:#475569}
-    .adhoc-input{width:115px;padding:4px 5px;border:1px solid #cbd5e1;border-radius:4px;
-      background:#fff;color:#334155;font:11px Calibri,Arial,sans-serif}
+    .adhoc-input{width:100%;min-width:0;padding:3px 2px;border:1px solid #cbd5e1;border-radius:4px;
+      background:#fff;color:#334155;font:9px Calibri,Arial,sans-serif}
     .capacity table{min-width:600px}
     .muted{color:#64748b;font-size:11px}
     #credits{margin-left:260px;padding:12px 16px 24px;color:#334155;font:12px Calibri,Arial,sans-serif}
