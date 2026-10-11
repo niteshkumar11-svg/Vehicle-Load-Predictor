@@ -2,6 +2,8 @@ const SPREADSHEET_ID = '1NNkIG1FmJ3ZwjrvsW9NakcfLT1t-pOhn8HKoBPVhb_Y';
 const SHIPMENTS_PER_BAG = 30;
 const PRESENCE_SHEET_NAME = 'Dashboard Active Users';
 const PRESENCE_TTL_MS = 5 * 60 * 1000;
+const ADHOC_NOTES_SHEET_NAME = 'Adhoc Requirement Notes';
+const ADHOC_RESET_HOUR = 4;
 
 const VEHICLE_CFT = {
   '6.5 Ft': 6.5 * 4.65 * 4.75,
@@ -96,6 +98,9 @@ function getDashboardData() {
   const maxVehicles = parseMaxVehicles_(findSheet_(ss, ['vehicle capacity']));
   const loads = computeLoads_(dhRows, bag, semi, tote);
   const rows = buildDhRows_(dhRows, loads, maxVehicles, vehicleCaps);
+  const notesSheet = adhocNotesSheet_(ss);
+  resetAdhocNotes_(notesSheet, new Date());
+  applyAdhocNotes_(rows, notesSheet);
   const dataUpdated = latestSheetUpdated_([bagSheet, semiSheet, toteSheet]) || new Date();
 
   return {
@@ -118,6 +123,69 @@ function getDashboardData() {
     vehicleCaps: vehicleCaps.map(item => ({vehicle: item.vehicle, capacity: item.capacity})),
     maxVehicles: maxVehicles,
   };
+}
+
+function saveAdhocNote(dhName, field, value) {
+  if (!['adhocCol1', 'adhocCol2'].includes(field)) throw new Error('Invalid Adhoc column');
+  const text = String(value || '').slice(0, 500);
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = adhocNotesSheet_(ss);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    resetAdhocNotes_(sheet, new Date());
+    const lastRow = sheet.getLastRow();
+    const values = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, 3).getValues() : [];
+    const rowIndex = values.findIndex(row => normalize_(row[0]) === normalize_(dhName));
+    const column = field === 'adhocCol1' ? 2 : 3;
+    if (rowIndex >= 0) {
+      const cell = sheet.getRange(rowIndex + 2, column);
+      cell.setNumberFormat('@');
+      cell.setValue(text);
+    } else {
+      const row = [String(dhName), '', ''];
+      row[column - 1] = text;
+      sheet.appendRow(row);
+      sheet.getRange(sheet.getLastRow(), 1, 1, 3).setNumberFormat('@');
+    }
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function adhocNotesSheet_(ss) {
+  const sheet = ss.getSheetByName(ADHOC_NOTES_SHEET_NAME)
+    || ss.insertSheet(ADHOC_NOTES_SHEET_NAME);
+  if (sheet.getLastRow() === 0) sheet.appendRow(['DH Name', 'Remarks by LH', 'Edited By']);
+  sheet.getRange(1, 1, 1, 3).setValues([['DH Name', 'Remarks by LH', 'Edited By']]);
+  sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+  return sheet;
+}
+
+function resetAdhocNotes_(sheet, now) {
+  const timezone = Session.getScriptTimeZone();
+  const hour = Number(Utilities.formatDate(now, timezone, 'H'));
+  if (hour < ADHOC_RESET_HOUR) return;
+  const resetDate = Utilities.formatDate(now, timezone, 'yyyy-MM-dd');
+  const properties = PropertiesService.getScriptProperties();
+  if (properties.getProperty('adhocNotesResetDate') === resetDate) return;
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 2, sheet.getLastRow() - 1, 2).clearContent();
+  properties.setProperty('adhocNotesResetDate', resetDate);
+}
+
+function applyAdhocNotes_(rows, sheet) {
+  const notes = {};
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getDisplayValues().forEach(row => {
+      notes[normalize_(row[0])] = {adhocCol1: row[1] || '', adhocCol2: row[2] || ''};
+    });
+  }
+  rows.forEach(row => {
+    const note = notes[normalize_(row.name)] || {adhocCol1: '', adhocCol2: ''};
+    row.adhocCol1 = note.adhocCol1;
+    row.adhocCol2 = note.adhocCol2;
+  });
 }
 
 function latestSheetUpdated_(sheets) {

@@ -87,6 +87,18 @@
     .util{display:flex;align-items:center;gap:6px}
     .util .bar{flex:1;margin:0;height:6px}
     .util span{width:42px;text-align:right;font-size:10px;color:#475569}
+    .adhoc-table-wrap{overflow:visible;padding-bottom:5px}
+    .adhoc-table-wrap table{width:100%;min-width:0;table-layout:fixed}
+    .adhoc-table-wrap th,.adhoc-table-wrap td{padding:4px 2px;font-size:9px;white-space:normal;word-break:break-word}
+    .adhoc-table-wrap th:nth-child(1){width:2%}.adhoc-table-wrap th:nth-child(2){width:5%}
+    .adhoc-table-wrap th:nth-child(3){width:7%}.adhoc-table-wrap th:nth-child(4){width:13%}
+    .adhoc-table-wrap th:nth-child(5){width:4%}.adhoc-table-wrap th:nth-child(6){width:5%}
+    .adhoc-table-wrap th:nth-child(7){width:4%}.adhoc-table-wrap th:nth-child(8){width:6%}
+    .adhoc-table-wrap th:nth-child(9){width:7%}.adhoc-table-wrap th:nth-child(10){width:9%}
+    .adhoc-table-wrap th:nth-child(11){width:9%}.adhoc-table-wrap th:nth-child(12){width:9%}
+    .adhoc-table-wrap th:nth-child(13){width:10%}.adhoc-table-wrap th:nth-child(14){width:10%}
+    .adhoc-input{width:100%;min-width:0;padding:3px 2px;border:1px solid #cbd5e1;border-radius:4px;
+      background:#fff;color:#334155;font:9px Calibri,Arial,sans-serif}
     .capacity table{min-width:600px}
     .muted{color:#64748b;font-size:11px}
     #credits{margin-left:260px;padding:12px 16px 24px;color:#334155;font:12px Calibri,Arial,sans-serif}
@@ -326,7 +338,7 @@
         : '<div class="hint">Select one or more DHs below to see the combined prediction.</div>';
       main.innerHTML=top+
         '<div class="heading">📝 Adhoc Requirement — '+rows.length+' DH(s)</div>'+
-        (rows.length?tableHtml(rows,'totalShipments',-1):'<div class="hint">No DHs with pending load were found.</div>');
+        (rows.length?tableHtml(rows,'totalShipments',-1,true):'<div class="hint">No DHs with pending load were found.</div>');
     }
     function renderCapacity(main){
       const rows=state.data.vehicleCaps;
@@ -371,7 +383,7 @@
         '<div><div class="label">Total Shipments</div><div class="big">'+agg.totalShipments.toLocaleString()+'</div></div>'+
         '</div></div>';
     }
-    function tableHtml(rows,defaultKey,defaultDir){
+    function tableHtml(rows,defaultKey,defaultDir,editable){
       const sortKey=state.sortKey||defaultKey;
       const sortDir=state.sortKey?state.sortDir:defaultDir;
       const sorted=rows.slice().sort((left,right)=>compareRows(left,right,sortKey)*sortDir);
@@ -389,7 +401,12 @@
           '<td>'+esc(row.maxVehicle)+'</td>'+
           '<td><div class="util"><div class="bar"><i style="width:'+maxWidth+'%"></i></div><span>'+Number(row.maxUtilization).toFixed(1)+'%</span></div></td>'+
           '<td class="vehicle-cell">'+esc(row.recommendedVehicle)+'</td>'+
-          '<td><div class="util"><div class="bar"><i style="width:'+recommendedWidth+'%"></i></div><span>'+Number(row.recommendedUtilization).toFixed(1)+'%</span></div></td></tr>';
+          '<td><div class="util"><div class="bar"><i style="width:'+recommendedWidth+'%"></i></div><span>'+Number(row.recommendedUtilization).toFixed(1)+'%</span></div></td>'+
+          (editable
+            ? '<td><input class="adhoc-input" value="'+esc(row.adhocCol1||'')+'" onchange="saveAdhocNote(\''+escAttr(row.name)+'\',\'adhocCol1\',this.value)"></td>'+
+              '<td><input class="adhoc-input" value="'+esc(row.adhocCol2||'')+'" onchange="saveAdhocNote(\''+escAttr(row.name)+'\',\'adhocCol2\',this.value)"></td>'
+            : '')+
+          '</tr>';
       }).join('');
       return '<div class="table-wrap"><table><thead><tr><th></th>'+
         head('cutoff','Cut Off')+head('code','DH Code')+head('name','DH Name')+
@@ -398,7 +415,16 @@
         head('maxUtilization','Max Utilization')+
         head('recommendedVehicle','Recommended Vehicle')+
         head('recommendedUtilization','Recommended Utilization')+
+        (editable?head('adhocCol1','Remarks by LH')+head('adhocCol2','Edited By'):'')+
         '</tr></thead><tbody>'+body+'</tbody></table></div>';
+    }
+
+    function saveAdhocNote(name,field,value){
+      const row=state.data.rows.find(item=>item.name===name);
+      if(row)row[field]=value;
+      google.script.run.withFailureHandler(error=>{
+        console.error('Could not save Adhoc field',error);
+      }).saveAdhocNote(name,field,value);
     }
 
     function sortBy(key){
